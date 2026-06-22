@@ -1,4 +1,4 @@
-from app.models.hotel import Hotel, HotelStatus
+from app.models.hotel import Hotel, HotelStatus, PropertyType, PropertyPhoto
 from app.models.user import User, RefreshToken
 from app.models.platform_admin import PlatformAdmin, AdminRefreshToken
 from app.models.subscription import SubscriptionPlan, PropertySubscription, SubscriptionStatus, BillingCycle
@@ -7,7 +7,7 @@ from app.models.billing import InvoiceType, InvoiceStatus, PeriodType, Commissio
 from app.models.audit_log import AuditLog
 
 __all__ = [
-    "Hotel", "HotelStatus",
+    "Hotel", "HotelStatus", "PropertyType", "PropertyPhoto",
     "User", "RefreshToken",
     "PlatformAdmin", "AdminRefreshToken",
     "SubscriptionPlan", "PropertySubscription", "SubscriptionStatus", "BillingCycle",

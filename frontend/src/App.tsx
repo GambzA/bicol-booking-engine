@@ -9,6 +9,8 @@ import { AdminLogin } from './pages/admin/AdminLogin'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
 import { PropertiesPage } from './pages/admin/PropertiesPage'
 import { PropertyDetailPage } from './pages/admin/PropertyDetailPage'
+import { CreatePropertyPage } from './pages/admin/CreatePropertyPage'
+import { EditPropertyPage } from './pages/admin/EditPropertyPage'
 import { PlansPage } from './pages/admin/PlansPage'
 import { InvoicesPage } from './pages/admin/InvoicesPage'
 import { InvoiceDetailPage } from './pages/admin/InvoiceDetailPage'
@@ -59,6 +61,8 @@ export default function App() {
           <Route element={<AdminLayout />}>
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
             <Route path="/admin/properties" element={<PropertiesPage />} />
+            <Route path="/admin/properties/new" element={<CreatePropertyPage />} />
+            <Route path="/admin/properties/:id/edit" element={<EditPropertyPage />} />
             <Route path="/admin/properties/:id" element={<PropertyDetailPage />} />
             <Route path="/admin/plans" element={<PlansPage />} />
             <Route path="/admin/invoices" element={<InvoicesPage />} />

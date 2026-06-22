@@ -1,7 +1,7 @@
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 from sqlalchemy import String, Boolean, ForeignKey, Enum as SQLEnum, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -23,9 +23,16 @@ class User(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    last_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    mobile_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(SQLEnum(UserRole), default=UserRole.OWNER, nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        SQLEnum(UserRole, values_callable=lambda x: [e.value for e in x]),
+        default=UserRole.OWNER, nullable=False,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     hotel: Mapped["Hotel"] = relationship("Hotel", back_populates="users")

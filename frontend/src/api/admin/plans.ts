@@ -10,6 +10,10 @@ export const plansApi = {
     adminApi.post<SubscriptionPlan>('/api/v1/admin/plans', data),
   update: (id: string, data: object) =>
     adminApi.patch<SubscriptionPlan>(`/api/v1/admin/plans/${id}`, data),
-  disable: (id: string) =>
+  toggle: (id: string) =>
+    adminApi.post<SubscriptionPlan>(`/api/v1/admin/plans/${id}/toggle`),
+  softDelete: (id: string) =>
     adminApi.delete(`/api/v1/admin/plans/${id}`),
+  /** @deprecated use softDelete */
+  disable: (id: string) => adminApi.delete(`/api/v1/admin/plans/${id}`),
 }

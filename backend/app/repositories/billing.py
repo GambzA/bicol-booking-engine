@@ -79,13 +79,27 @@ class PaymentRepository(BaseRepository[Payment]):
 class CommissionStatementRepository(BaseRepository[CommissionStatement]):
     model = CommissionStatement
 
+    async def get_by_id(self, id: object) -> CommissionStatement | None:
+        result = await self.session.execute(
+            select(CommissionStatement)
+            .options(
+                selectinload(CommissionStatement.hotel),
+                selectinload(CommissionStatement.adjustments),
+            )
+            .where(CommissionStatement.id == id)
+        )
+        return result.scalar_one_or_none()
+
     async def list_with_filters(
         self,
         hotel_id: object | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[CommissionStatement], int]:
-        stmt = select(CommissionStatement).options(selectinload(CommissionStatement.hotel))
+        stmt = select(CommissionStatement).options(
+            selectinload(CommissionStatement.hotel),
+            selectinload(CommissionStatement.adjustments),
+        )
         count_stmt = select(func.count()).select_from(CommissionStatement)
 
         if hotel_id:

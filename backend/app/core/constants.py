@@ -12,6 +12,8 @@ class AuditAction:
     PLAN_CREATED = "plan.created"
     PLAN_UPDATED = "plan.updated"
     PLAN_DISABLED = "plan.disabled"
+    PLAN_TOGGLED = "plan.toggled"
+    PLAN_DELETED = "plan.deleted"
 
     INVOICE_CREATED = "invoice.created"
     INVOICE_SENT = "invoice.sent"

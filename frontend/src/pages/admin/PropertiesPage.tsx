@@ -8,7 +8,6 @@ import { Input } from '../../components/common/Input'
 import { Select } from '../../components/common/Select'
 import { Pagination } from '../../components/common/Pagination'
 import { HotelStatusBadge, SubscriptionStatusBadge } from '../../components/admin/StatusBadge'
-import { CreatePropertyModal } from './CreatePropertyModal'
 import { useToast } from '../../components/common/useToast'
 import type { Hotel } from '../../types/admin'
 
@@ -29,7 +28,6 @@ export function PropertiesPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
-  const [showCreate, setShowCreate] = useState(false)
   const PAGE_SIZE = 20
 
   const fetchHotels = useCallback(async () => {
@@ -79,7 +77,7 @@ export function PropertiesPage() {
           <h1 className="text-xl font-bold text-slate-900">Properties</h1>
           <p className="mt-1 text-sm text-slate-500">{total} registered {total === 1 ? 'property' : 'properties'}</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
+        <Button onClick={() => navigate('/admin/properties/new')}>
           <Plus size={16} /> Add Property
         </Button>
       </div>
@@ -114,11 +112,6 @@ export function PropertiesPage() {
         <Pagination page={page} pages={pages} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
       </div>
 
-      <CreatePropertyModal
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-        onCreated={() => { setShowCreate(false); fetchHotels() }}
-      />
     </div>
   )
 }

@@ -17,9 +17,27 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # -- Enum types. Each is used in exactly one table, so create_table/add_column
+    # creates the PG type exactly once. Do NOT pre-create with op.execute (that
+    # double-creates and raises DuplicateObject).
+    hotelstatus             = sa.Enum("active", "suspended", "deactivated", name="hotelstatus")
+    subscriptionstatus      = sa.Enum("trial", "active", "past_due", "suspended", "cancelled", name="subscriptionstatus")
+    billingcycle            = sa.Enum("monthly", "annual", name="billingcycle")
+    periodtype              = sa.Enum("monthly", "annual", name="periodtype")
+    commissionstmtstatus    = sa.Enum("draft", "finalized", name="commissionstatementstatus")
+    invoicetype             = sa.Enum("subscription", "commission", "combined", "one_time", name="invoicetype")
+    invoicestatus           = sa.Enum("draft", "sent", "paid", "overdue", "cancelled", "void", name="invoicestatus")
+
     # -- hotels: add status column
-    op.execute("CREATE TYPE hotelstatus AS ENUM ('active', 'suspended', 'deactivated')")
-    op.add_column("hotels", sa.Column("status", sa.Enum("active", "suspended", "deactivated", name="hotelstatus"), nullable=False, server_default="active"))
+    # op.add_column does NOT auto-create enum types (only create_table does).
+    # Create hotelstatus explicitly, then reference it with create_type=False.
+    op.execute(sa.text("CREATE TYPE hotelstatus AS ENUM ('active', 'suspended', 'deactivated')"))
+    op.add_column("hotels", sa.Column(
+        "status",
+        postgresql.ENUM("active", "suspended", "deactivated", name="hotelstatus", create_type=False),
+        nullable=False,
+        server_default="active",
+    ))
 
     # -- platform_admins
     op.create_table(
@@ -68,15 +86,13 @@ def upgrade() -> None:
     )
 
     # -- property_subscriptions
-    op.execute("CREATE TYPE subscriptionstatus AS ENUM ('trial', 'active', 'past_due', 'suspended', 'cancelled')")
-    op.execute("CREATE TYPE billingcycle AS ENUM ('monthly', 'annual')")
     op.create_table(
         "property_subscriptions",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("hotel_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("plan_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("status", sa.Enum("trial", "active", "past_due", "suspended", "cancelled", name="subscriptionstatus"), nullable=False),
-        sa.Column("billing_cycle", sa.Enum("monthly", "annual", name="billingcycle"), nullable=False),
+        sa.Column("status", subscriptionstatus, nullable=False),
+        sa.Column("billing_cycle", billingcycle, nullable=False),
         sa.Column("start_date", sa.Date(), nullable=False),
         sa.Column("end_date", sa.Date(), nullable=True),
         sa.Column("trial_end_date", sa.Date(), nullable=True),
@@ -93,20 +109,18 @@ def upgrade() -> None:
     )
 
     # -- commission_statements (WITHOUT invoice_id to break circular FK)
-    op.execute("CREATE TYPE periodtype AS ENUM ('monthly', 'annual')")
-    op.execute("CREATE TYPE commissionstatementstatus AS ENUM ('draft', 'finalized')")
     op.create_table(
         "commission_statements",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("hotel_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("period_type", sa.Enum("monthly", "annual", name="periodtype"), nullable=False),
+        sa.Column("period_type", periodtype, nullable=False),
         sa.Column("period_start", sa.Date(), nullable=False),
         sa.Column("period_end", sa.Date(), nullable=False),
         sa.Column("total_booking_revenue", sa.Numeric(12, 2), nullable=False),
         sa.Column("eligible_booking_revenue", sa.Numeric(12, 2), nullable=False),
         sa.Column("commission_percentage", sa.Numeric(5, 2), nullable=False),
         sa.Column("total_commission_due", sa.Numeric(10, 2), nullable=False),
-        sa.Column("status", sa.Enum("draft", "finalized", name="commissionstatementstatus"), nullable=False, server_default="draft"),
+        sa.Column("status", commissionstmtstatus, nullable=False, server_default="draft"),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -116,15 +130,13 @@ def upgrade() -> None:
     )
 
     # -- invoices
-    op.execute("CREATE TYPE invoicetype AS ENUM ('subscription', 'commission', 'combined', 'one_time')")
-    op.execute("CREATE TYPE invoicestatus AS ENUM ('draft', 'sent', 'paid', 'overdue', 'cancelled', 'void')")
     op.create_table(
         "invoices",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("invoice_number", sa.String(50), nullable=False),
         sa.Column("hotel_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("type", sa.Enum("subscription", "commission", "combined", "one_time", name="invoicetype"), nullable=False),
-        sa.Column("status", sa.Enum("draft", "sent", "paid", "overdue", "cancelled", "void", name="invoicestatus"), nullable=False, server_default="draft"),
+        sa.Column("type", invoicetype, nullable=False),
+        sa.Column("status", invoicestatus, nullable=False, server_default="draft"),
         sa.Column("billing_period_start", sa.Date(), nullable=False),
         sa.Column("billing_period_end", sa.Date(), nullable=False),
         sa.Column("due_date", sa.Date(), nullable=False),

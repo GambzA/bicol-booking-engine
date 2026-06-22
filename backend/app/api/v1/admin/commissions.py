@@ -32,7 +32,7 @@ class AddAdjustmentRequest(BaseModel):
 async def list_statements(
     hotel_id: Optional[uuid.UUID] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     admin: PlatformAdmin = Depends(get_current_admin),
 ):

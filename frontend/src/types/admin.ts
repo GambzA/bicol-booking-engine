@@ -12,6 +12,7 @@ export interface AdminAuthResponse {
 }
 
 export type HotelStatus = 'active' | 'suspended' | 'deactivated'
+export type PropertyType = 'hotel' | 'resort' | 'apartment' | 'hostel' | 'villa' | 'bed_and_breakfast' | 'guest_house'
 export type SubscriptionStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled'
 export type BillingCycle = 'monthly' | 'annual'
 export type InvoiceType = 'subscription' | 'commission' | 'combined' | 'one_time'
@@ -22,6 +23,10 @@ export type CommissionStatementStatus = 'draft' | 'finalized'
 export interface SubscriptionPlanSummary {
   id: string
   name: string
+  monthly_fee: string
+  annual_fee: string
+  commission_percentage: string
+  trial_period_days: number
 }
 
 export interface PropertySubscriptionSummary {
@@ -37,24 +42,51 @@ export interface PropertySubscriptionSummary {
 export interface HotelUser {
   id: string
   email: string
+  first_name: string | null
+  last_name: string | null
   full_name: string
+  mobile_number: string | null
+  username: string | null
   role: 'owner' | 'staff'
+}
+
+export interface PropertyPhoto {
+  id: string
+  url: string
+  caption: string | null
+  sort_order: number
 }
 
 export interface Hotel {
   id: string
   name: string
+  business_name: string | null
   slug: string
+  property_type: PropertyType
+  description: string | null
   email: string
-  phone: string | null
-  address: string | null
+  contact_person: string | null
+  mobile_number: string | null
+  telephone_number: string | null
   city: string | null
+  province: string | null
   country: string
+  address_line_1: string | null
+  address_line_2: string | null
+  postal_code: string | null
+  latitude: number | null
+  longitude: number | null
+  default_currency: string
+  timezone: string
+  language: string
+  banner_image_url: string | null
+  logo_url: string | null
   status: HotelStatus
   is_active: boolean
   created_at: string
   subscription: PropertySubscriptionSummary | null
   users?: HotelUser[]
+  photos?: PropertyPhoto[]
 }
 
 export interface SubscriptionPlan {

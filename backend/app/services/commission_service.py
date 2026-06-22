@@ -66,7 +66,7 @@ class CommissionService:
             after_state={"period": f"{period_start} - {period_end}", "total_due": str(total_due)},
         )
         await self.session.commit()
-        return statement
+        return await self.get_statement(statement.id)
 
     async def add_adjustment(
         self,
@@ -115,7 +115,7 @@ class CommissionService:
             admin_id=admin_id,
         )
         await self.session.commit()
-        return stmt
+        return await self.get_statement(statement_id)
 
     async def net_amount(self, statement_id: uuid.UUID) -> Decimal:
         stmt = await self.get_statement(statement_id)

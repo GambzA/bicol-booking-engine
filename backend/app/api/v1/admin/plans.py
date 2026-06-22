@@ -76,13 +76,25 @@ async def update_plan(
     return _plan_out(plan)
 
 
-@router.delete("/{plan_id}", status_code=204)
-async def disable_plan(
+@router.post("/{plan_id}/toggle", status_code=200)
+async def toggle_plan(
     plan_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     admin: PlatformAdmin = Depends(get_current_admin),
 ):
-    await SubscriptionPlanService(db).disable_plan(admin.id, plan_id)
+    svc = SubscriptionPlanService(db)
+    plan = await svc.get_plan(plan_id)
+    updated = await svc.toggle_plan(admin.id, plan_id, not plan.is_active)
+    return _plan_out(updated)
+
+
+@router.delete("/{plan_id}", status_code=204)
+async def delete_plan(
+    plan_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    admin: PlatformAdmin = Depends(get_current_admin),
+):
+    await SubscriptionPlanService(db).delete_plan(admin.id, plan_id)
 
 
 def _plan_out(p) -> dict:

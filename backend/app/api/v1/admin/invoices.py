@@ -36,7 +36,7 @@ async def list_invoices(
     hotel_id: Optional[uuid.UUID] = Query(None),
     status: Optional[InvoiceStatus] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     admin: PlatformAdmin = Depends(get_current_admin),
 ):

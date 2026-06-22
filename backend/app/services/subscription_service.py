@@ -50,17 +50,34 @@ class SubscriptionPlanService:
         await self.session.commit()
         return plan
 
-    async def disable_plan(self, admin_id: uuid.UUID, plan_id: uuid.UUID) -> None:
+    async def toggle_plan(self, admin_id: uuid.UUID, plan_id: uuid.UUID, is_active: bool) -> SubscriptionPlan:
+        plan = await self.get_plan(plan_id)
+        await self.repo.update(plan, {"is_active": is_active})
+        await log_audit(
+            self.session,
+            action=AuditAction.PLAN_TOGGLED,
+            entity_type="subscription_plan",
+            entity_id=str(plan_id),
+            admin_id=admin_id,
+            after_state={"is_active": is_active},
+        )
+        await self.session.commit()
+        return plan
+
+    async def delete_plan(self, admin_id: uuid.UUID, plan_id: uuid.UUID) -> None:
         plan = await self.get_plan(plan_id)
         await self.repo.soft_delete(plan)
         await log_audit(
             self.session,
-            action=AuditAction.PLAN_DISABLED,
+            action=AuditAction.PLAN_DELETED,
             entity_type="subscription_plan",
             entity_id=str(plan_id),
             admin_id=admin_id,
         )
         await self.session.commit()
+
+    async def disable_plan(self, admin_id: uuid.UUID, plan_id: uuid.UUID) -> None:
+        await self.delete_plan(admin_id, plan_id)
 
 
 class PropertySubscriptionService:

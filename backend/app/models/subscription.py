@@ -51,8 +51,14 @@ class PropertySubscription(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
     plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("subscription_plans.id"), nullable=False)
-    status: Mapped[SubscriptionStatus] = mapped_column(SQLEnum(SubscriptionStatus), default=SubscriptionStatus.TRIAL, nullable=False)
-    billing_cycle: Mapped[BillingCycle] = mapped_column(SQLEnum(BillingCycle), default=BillingCycle.MONTHLY, nullable=False)
+    status: Mapped[SubscriptionStatus] = mapped_column(
+        SQLEnum(SubscriptionStatus, name="subscriptionstatus", create_type=False, values_callable=lambda x: [e.value for e in x]),
+        default=SubscriptionStatus.TRIAL, nullable=False,
+    )
+    billing_cycle: Mapped[BillingCycle] = mapped_column(
+        SQLEnum(BillingCycle, name="billingcycle", create_type=False, values_callable=lambda x: [e.value for e in x]),
+        default=BillingCycle.MONTHLY, nullable=False,
+    )
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     trial_end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

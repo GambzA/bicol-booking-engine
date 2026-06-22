@@ -46,8 +46,14 @@ class Invoice(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     invoice_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
-    type: Mapped[InvoiceType] = mapped_column(SQLEnum(InvoiceType), nullable=False)
-    status: Mapped[InvoiceStatus] = mapped_column(SQLEnum(InvoiceStatus), default=InvoiceStatus.DRAFT, nullable=False)
+    type: Mapped[InvoiceType] = mapped_column(
+        SQLEnum(InvoiceType, name="invoicetype", create_type=False, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    status: Mapped[InvoiceStatus] = mapped_column(
+        SQLEnum(InvoiceStatus, name="invoicestatus", create_type=False, values_callable=lambda x: [e.value for e in x]),
+        default=InvoiceStatus.DRAFT, nullable=False,
+    )
     billing_period_start: Mapped[date] = mapped_column(Date, nullable=False)
     billing_period_end: Mapped[date] = mapped_column(Date, nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -69,7 +75,7 @@ class Invoice(TimestampMixin, Base):
     creator: Mapped["PlatformAdmin"] = relationship("PlatformAdmin", foreign_keys=[created_by])
     payments: Mapped[list["Payment"]] = relationship("Payment", back_populates="invoice")
     commission_statement: Mapped[Optional["CommissionStatement"]] = relationship(
-        "CommissionStatement", foreign_keys=[commission_statement_id], back_populates="invoice"
+        "CommissionStatement", foreign_keys=[commission_statement_id]
     )
 
 
@@ -96,7 +102,10 @@ class CommissionStatement(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
-    period_type: Mapped[PeriodType] = mapped_column(SQLEnum(PeriodType), nullable=False)
+    period_type: Mapped[PeriodType] = mapped_column(
+        SQLEnum(PeriodType, name="periodtype", create_type=False, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
     period_start: Mapped[date] = mapped_column(Date, nullable=False)
     period_end: Mapped[date] = mapped_column(Date, nullable=False)
     total_booking_revenue: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -104,7 +113,8 @@ class CommissionStatement(Base):
     commission_percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     total_commission_due: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     status: Mapped[CommissionStatementStatus] = mapped_column(
-        SQLEnum(CommissionStatementStatus), default=CommissionStatementStatus.DRAFT, nullable=False
+        SQLEnum(CommissionStatementStatus, name="commissionstatementstatus", create_type=False, values_callable=lambda x: [e.value for e in x]),
+        default=CommissionStatementStatus.DRAFT, nullable=False,
     )
     invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("invoices.id"), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("platform_admins.id"), nullable=False)
@@ -113,7 +123,7 @@ class CommissionStatement(Base):
 
     hotel: Mapped["Hotel"] = relationship("Hotel")
     invoice: Mapped[Optional["Invoice"]] = relationship(
-        "Invoice", foreign_keys=[invoice_id], back_populates="commission_statement"
+        "Invoice", foreign_keys=[invoice_id]
     )
     creator: Mapped["PlatformAdmin"] = relationship("PlatformAdmin")
     adjustments: Mapped[list["CommissionAdjustment"]] = relationship("CommissionAdjustment", back_populates="statement")
