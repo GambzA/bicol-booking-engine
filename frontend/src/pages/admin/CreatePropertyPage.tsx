@@ -8,54 +8,11 @@ import { propertiesApi, uploadApi } from '../../api/admin/properties'
 import { Button } from '../../components/common/Button'
 import { Input } from '../../components/common/Input'
 import { useToast } from '../../components/common/useToast'
+import { PROPERTY_TYPES, CURRENCIES, TIMEZONES, LANGUAGES } from '../../constants/propertyOptions'
 
 const MapPicker = lazy(() =>
   import('../../components/admin/MapPicker').then((m) => ({ default: m.MapPicker }))
 )
-
-const PROPERTY_TYPES = [
-  { value: 'hotel', label: 'Hotel' },
-  { value: 'resort', label: 'Resort' },
-  { value: 'apartment', label: 'Apartment' },
-  { value: 'hostel', label: 'Hostel' },
-  { value: 'villa', label: 'Villa' },
-  { value: 'bed_and_breakfast', label: 'Bed & Breakfast' },
-  { value: 'guest_house', label: 'Guest House' },
-]
-
-const CURRENCIES = [
-  { value: 'PHP', label: 'PHP — Philippine Peso' },
-  { value: 'USD', label: 'USD — US Dollar' },
-  { value: 'EUR', label: 'EUR — Euro' },
-  { value: 'GBP', label: 'GBP — British Pound' },
-  { value: 'SGD', label: 'SGD — Singapore Dollar' },
-  { value: 'AUD', label: 'AUD — Australian Dollar' },
-  { value: 'JPY', label: 'JPY — Japanese Yen' },
-]
-
-const TIMEZONES = [
-  { value: 'Asia/Manila', label: 'Asia/Manila (PHT +08:00)' },
-  { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT +08:00)' },
-  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST +09:00)' },
-  { value: 'Asia/Bangkok', label: 'Asia/Bangkok (ICT +07:00)' },
-  { value: 'Asia/Kuala_Lumpur', label: 'Asia/Kuala_Lumpur (MYT +08:00)' },
-  { value: 'Australia/Sydney', label: 'Australia/Sydney (AEDT)' },
-  { value: 'Europe/London', label: 'Europe/London (GMT/BST)' },
-  { value: 'America/New_York', label: 'America/New_York (EST/EDT)' },
-  { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST/PDT)' },
-  { value: 'UTC', label: 'UTC' },
-]
-
-const LANGUAGES = [
-  { value: 'en', label: 'English' },
-  { value: 'fil', label: 'Filipino' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'zh', label: 'Chinese (Simplified)' },
-  { value: 'ko', label: 'Korean' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'es', label: 'Spanish' },
-]
 
 const schema = z.object({
   hotel_name: z.string().min(1, 'Property name is required'),

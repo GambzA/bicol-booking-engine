@@ -5,6 +5,10 @@ from app.models.subscription import SubscriptionPlan, PropertySubscription, Subs
 from app.models.billing import Invoice, Payment, CommissionStatement, CommissionAdjustment
 from app.models.billing import InvoiceType, InvoiceStatus, PeriodType, CommissionStatementStatus
 from app.models.audit_log import AuditLog
+from app.models.property_portal import (
+    Accommodation, Guest, Booking, GuestPayment,
+    AccommodationType, BookingStatus, GuestPaymentStatus,
+)
 
 __all__ = [
     "Hotel", "HotelStatus", "PropertyType", "PropertyPhoto",
@@ -14,4 +18,6 @@ __all__ = [
     "Invoice", "Payment", "CommissionStatement", "CommissionAdjustment",
     "InvoiceType", "InvoiceStatus", "PeriodType", "CommissionStatementStatus",
     "AuditLog",
+    "Accommodation", "Guest", "Booking", "GuestPayment",
+    "AccommodationType", "BookingStatus", "GuestPaymentStatus",
 ]

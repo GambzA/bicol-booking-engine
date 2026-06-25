@@ -4,7 +4,12 @@ import { useAuthStore } from './store/authStore'
 import { useAdminAuthStore } from './store/adminAuthStore'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
-import { Dashboard } from './pages/Dashboard'
+import { PropertyLayout } from './components/property/PropertyLayout'
+import { PropertyDashboard } from './pages/property/PropertyDashboard'
+import { AccommodationsPage } from './pages/property/accommodations/AccommodationsPage'
+import { CreateAccommodationPage } from './pages/property/accommodations/CreateAccommodationPage'
+import { EditAccommodationPage } from './pages/property/accommodations/EditAccommodationPage'
+import { AvailabilityPage } from './pages/property/accommodations/AvailabilityPage'
 import { AdminLogin } from './pages/admin/AdminLogin'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
 import { PropertiesPage } from './pages/admin/PropertiesPage'
@@ -46,11 +51,19 @@ export default function App() {
     <BrowserRouter>
       <Toaster position="top-right" />
       <Routes>
-        {/* Property routes */}
+        {/* Property public routes */}
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+
+        {/* Property protected routes */}
+        <Route element={<ProtectedRoute><PropertyLayout /></ProtectedRoute>}>
+          <Route path="/dashboard" element={<PropertyDashboard />} />
+          <Route path="/accommodations" element={<AccommodationsPage />} />
+          <Route path="/accommodations/new" element={<CreateAccommodationPage />} />
+          <Route path="/accommodations/availability" element={<AvailabilityPage />} />
+          <Route path="/accommodations/:id/edit" element={<EditAccommodationPage />} />
+        </Route>
 
         {/* Admin public */}
         <Route path="/admin/login" element={<AdminPublicRoute><AdminLogin /></AdminPublicRoute>} />
