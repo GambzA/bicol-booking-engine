@@ -5,11 +5,11 @@ from typing import Optional, Any
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.models.property_portal import Accommodation, AccommodationType, AccommodationUnitAvailability, Booking, BookingStatus
+from app.models.property_portal import Accommodation, AccommodationType, AccommodationUnitAvailability, AccommodationRateOverride, Booking, BookingStatus
 
 router = APIRouter(prefix="/accommodations", tags=["property-accommodations"])
 
@@ -346,6 +346,115 @@ async def set_unit_availability(
 
     await db.commit()
     return {"ok": True, "updated": len(body)}
+
+
+class RateCalendarRecord(BaseModel):
+    date: date
+    rate: Decimal
+
+
+class DeleteRateOverridesBody(BaseModel):
+    dates: list[date]
+
+
+@router.get("/{accommodation_id}/rate-calendar")
+async def get_rate_calendar(
+    accommodation_id: uuid.UUID,
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    a = await _get_or_404(db, accommodation_id, user.hotel_id)
+    today = date.today()
+    if start_date is None:
+        start_date = today
+    if end_date is None:
+        end_date = today + timedelta(days=29)
+    if (end_date - start_date).days > 29:
+        end_date = start_date + timedelta(days=29)
+    if end_date < start_date:
+        end_date = start_date
+
+    date_list: list[date] = [
+        start_date + timedelta(days=i)
+        for i in range((end_date - start_date).days + 1)
+    ]
+
+    records = list((await db.execute(
+        select(AccommodationRateOverride).where(
+            AccommodationRateOverride.accommodation_id == accommodation_id,
+            AccommodationRateOverride.date >= start_date,
+            AccommodationRateOverride.date <= end_date,
+        )
+    )).scalars().all())
+
+    override_map: dict[date, Decimal] = {r.date: r.rate for r in records}
+
+    def default_rate(d: date) -> Decimal:
+        if d.weekday() >= 5 and a.weekend_rate is not None:
+            return a.weekend_rate
+        return a.base_rate
+
+    return {
+        "accommodation_id": str(a.id),
+        "name": a.name,
+        "base_rate": str(a.base_rate),
+        "weekend_rate": str(a.weekend_rate) if a.weekend_rate is not None else None,
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "dates": [str(d) for d in date_list],
+        "rates": {
+            str(d): str(override_map[d]) if d in override_map else str(default_rate(d))
+            for d in date_list
+        },
+        "overridden_dates": [str(d) for d in override_map],
+    }
+
+
+@router.put("/{accommodation_id}/rate-calendar")
+async def set_rate_calendar(
+    accommodation_id: uuid.UUID,
+    body: list[RateCalendarRecord],
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await _get_or_404(db, accommodation_id, user.hotel_id)
+    for record in body:
+        existing = (await db.execute(
+            select(AccommodationRateOverride).where(
+                AccommodationRateOverride.accommodation_id == accommodation_id,
+                AccommodationRateOverride.date == record.date,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            existing.rate = record.rate
+        else:
+            db.add(AccommodationRateOverride(
+                accommodation_id=accommodation_id,
+                date=record.date,
+                rate=record.rate,
+            ))
+    await db.commit()
+    return {"ok": True, "updated": len(body)}
+
+
+@router.delete("/{accommodation_id}/rate-calendar")
+async def delete_rate_overrides(
+    accommodation_id: uuid.UUID,
+    body: DeleteRateOverridesBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await _get_or_404(db, accommodation_id, user.hotel_id)
+    await db.execute(
+        delete(AccommodationRateOverride).where(
+            AccommodationRateOverride.accommodation_id == accommodation_id,
+            AccommodationRateOverride.date.in_(body.dates),
+        )
+    )
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/{accommodation_id}")

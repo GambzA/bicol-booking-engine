@@ -10,6 +10,7 @@ import { AccommodationsPage } from './pages/property/accommodations/Accommodatio
 import { CreateAccommodationPage } from './pages/property/accommodations/CreateAccommodationPage'
 import { EditAccommodationPage } from './pages/property/accommodations/EditAccommodationPage'
 import { AvailabilityPage } from './pages/property/accommodations/AvailabilityPage'
+import { RateCalendarPage } from './pages/property/accommodations/RateCalendarPage'
 import { AdminLogin } from './pages/admin/AdminLogin'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
 import { PropertiesPage } from './pages/admin/PropertiesPage'
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="/accommodations" element={<AccommodationsPage />} />
           <Route path="/accommodations/new" element={<CreateAccommodationPage />} />
           <Route path="/accommodations/availability" element={<AvailabilityPage />} />
+          <Route path="/accommodations/rate-calendar" element={<RateCalendarPage />} />
           <Route path="/accommodations/:id/edit" element={<EditAccommodationPage />} />
         </Route>
 

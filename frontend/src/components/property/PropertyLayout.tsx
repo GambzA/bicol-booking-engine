@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, BedDouble, BookOpen, Users, CreditCard,
   Settings, BarChart3, LogOut, Plug, UserCog,
-  ChevronRight, List, CalendarDays,
+  ChevronRight, List, CalendarDays, Tag,
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { authApi } from '../../api/auth'
@@ -44,7 +44,9 @@ export function PropertyLayout() {
   }
 
   const isManagementActive =
-    isOnAccommodations && !location.pathname.startsWith('/accommodations/availability')
+    isOnAccommodations &&
+    !location.pathname.startsWith('/accommodations/availability') &&
+    !location.pathname.startsWith('/accommodations/rate-calendar')
 
   return (
     <div className="flex h-screen bg-slate-100">
@@ -95,6 +97,13 @@ export function PropertyLayout() {
               >
                 <CalendarDays size={14} />
                 Availability
+              </NavLink>
+              <NavLink
+                to="/accommodations/rate-calendar"
+                className={({ isActive }) => NAV_ITEM_CLASS(isActive)}
+              >
+                <Tag size={14} />
+                Rate Calendar
               </NavLink>
             </div>
           )}

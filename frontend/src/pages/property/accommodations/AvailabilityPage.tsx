@@ -4,14 +4,22 @@ import { accommodationsApi, type UnitAvailabilityResponse } from '../../../api/p
 import { Input } from '../../../components/common/Input'
 import { useToast } from '../../../components/common/useToast'
 
+function localDateStr(d: Date): string {
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
 function todayStr() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr(new Date())
 }
 
 function addDays(dateStr: string, days: number) {
   const d = new Date(dateStr + 'T00:00:00')
   d.setDate(d.getDate() + days)
-  return d.toISOString().split('T')[0]
+  return localDateStr(d)
 }
 
 function diffDays(a: string, b: string) {

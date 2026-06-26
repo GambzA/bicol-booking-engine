@@ -74,6 +74,18 @@ export interface UnitAvailabilityResponse {
   units: UnitAvailabilityRow[]
 }
 
+export interface RateCalendarResponse {
+  accommodation_id: string
+  name: string
+  base_rate: string
+  weekend_rate: string | null
+  start_date: string
+  end_date: string
+  dates: string[]
+  rates: Record<string, string>
+  overridden_dates: string[]
+}
+
 const BASE = '/api/v1/property/accommodations'
 
 export const accommodationsApi = {
@@ -135,6 +147,15 @@ export const accommodationsApi = {
     id: string,
     records: { unit_number: number; date: string; is_available: boolean }[],
   ) => api.put(`${BASE}/${id}/unit-availability`, records),
+
+  rateCalendar: (id: string, params?: { start_date?: string; end_date?: string }) =>
+    api.get<RateCalendarResponse>(`${BASE}/${id}/rate-calendar`, { params }),
+
+  setRateCalendar: (id: string, records: { date: string; rate: string }[]) =>
+    api.put(`${BASE}/${id}/rate-calendar`, records),
+
+  deleteRateOverrides: (id: string, dates: string[]) =>
+    api.delete(`${BASE}/${id}/rate-calendar`, { data: { dates } }),
 
   uploadImage: (file: File, folder = 'accommodations') => {
     const form = new FormData()

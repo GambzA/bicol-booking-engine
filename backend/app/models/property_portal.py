@@ -89,6 +89,25 @@ class AccommodationUnitAvailability(Base):
     )
 
 
+class AccommodationRateOverride(Base):
+    __tablename__ = "accommodation_rate_overrides"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    accommodation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accommodations.id", ondelete="CASCADE"), nullable=False
+    )
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("accommodation_id", "date", name="uq_rate_override"),
+    )
+
+
 class Guest(TimestampMixin, Base):
     __tablename__ = "guests"
 
