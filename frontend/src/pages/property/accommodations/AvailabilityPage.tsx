@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Check, X, Loader2 } from 'lucide-react'
+import { Check, X, Loader2, Minus } from 'lucide-react'
 import { accommodationsApi, type UnitAvailabilityResponse } from '../../../api/property/accommodations'
 import { Input } from '../../../components/common/Input'
 import { useToast } from '../../../components/common/useToast'
@@ -58,6 +58,7 @@ export function AvailabilityPage() {
   const [overrides, setOverrides] = useState<Record<string, boolean>>({})
   const [savingCell, setSavingCell] = useState<string | null>(null)
   const [hover, setHover] = useState<{ unitNumber: number; dateStr: string } | null>(null)
+  const [savingColumn, setSavingColumn] = useState<string | null>(null)
 
   useEffect(() => {
     accommodationsApi
@@ -109,6 +110,56 @@ export function AvailabilityPage() {
     if (key in overrides) return overrides[key]
     const unit = data?.units.find((u) => u.unit_number === unitNumber)
     return unit?.availability[dateStr] ?? true
+  }
+
+  const getColumnState = (dateStr: string): 'all-open' | 'all-blocked' | 'mixed' => {
+    if (!data || data.units.length === 0) return 'all-open'
+    const values = data.units.map((u) => getCellValue(u.unit_number, dateStr))
+    if (values.every((v) => v)) return 'all-open'
+    if (values.every((v) => !v)) return 'all-blocked'
+    return 'mixed'
+  }
+
+  const toggleColumn = async (dateStr: string) => {
+    if (!selectedId || !data) return
+    const next = getColumnState(dateStr) === 'all-open' ? false : true
+
+    const prevOverrides: Record<string, boolean | undefined> = {}
+    for (const unit of data.units) {
+      const key = `${unit.unit_number}-${dateStr}`
+      prevOverrides[key] = overrides[key]
+    }
+
+    setOverrides((prev) => {
+      const updated = { ...prev }
+      for (const unit of data.units) {
+        updated[`${unit.unit_number}-${dateStr}`] = next
+      }
+      return updated
+    })
+    setSavingColumn(dateStr)
+
+    try {
+      await accommodationsApi.setUnitAvailability(
+        selectedId,
+        data.units.map((u) => ({ unit_number: u.unit_number, date: dateStr, is_available: next })),
+      )
+    } catch {
+      setOverrides((prev) => {
+        const reverted = { ...prev }
+        for (const unit of data.units) {
+          const key = `${unit.unit_number}-${dateStr}`
+          if (prevOverrides[key] !== undefined) {
+            reverted[key] = prevOverrides[key] as boolean
+          } else {
+            delete reverted[key]
+          }
+        }
+        return reverted
+      })
+      toast.error('Failed to update column.')
+    }
+    setSavingColumn(null)
   }
 
   const toggleCell = async (unitNumber: number, dateStr: string) => {
@@ -207,25 +258,57 @@ export function AvailabilityPage() {
                 <th className="sticky left-0 z-10 min-w-[128px] border-b border-r border-slate-200 bg-white px-4 py-3 text-left text-xs font-semibold text-slate-500">
                   Unit
                 </th>
-                {data.dates.map((d) => (
-                  <th
-                    key={d}
-                    className={`min-w-[64px] border-b border-slate-200 px-1 py-2 text-center transition-colors ${
-                      hover?.dateStr === d
-                        ? 'bg-blue-100'
-                        : isWeekend(d)
-                          ? 'bg-slate-200'
-                          : 'bg-white'
-                    }`}
-                  >
-                    <div className="text-[10px] font-normal text-slate-400">
-                      {formatDayOfWeek(d)}
-                    </div>
-                    <div className="text-xs font-semibold text-slate-600">
-                      {formatDateLabel(d)}
-                    </div>
-                  </th>
-                ))}
+                {data.dates.map((d) => {
+                  const colState = getColumnState(d)
+                  const isSavingCol = savingColumn === d
+                  return (
+                    <th
+                      key={d}
+                      className={`min-w-[64px] border-b border-slate-200 px-1 py-2 text-center transition-colors ${
+                        hover?.dateStr === d
+                          ? 'bg-blue-100'
+                          : isWeekend(d)
+                            ? 'bg-slate-200'
+                            : 'bg-white'
+                      }`}
+                    >
+                      <div className="text-[10px] font-normal text-slate-400">
+                        {formatDayOfWeek(d)}
+                      </div>
+                      <div className="text-xs font-semibold text-slate-600">
+                        {formatDateLabel(d)}
+                      </div>
+                      <div className="mt-1.5 flex justify-center">
+                        <button
+                          onClick={() => toggleColumn(d)}
+                          disabled={isSavingCol}
+                          title={
+                            colState === 'all-open'
+                              ? 'Block all units for this date'
+                              : 'Open all units for this date'
+                          }
+                          className={`flex h-5 w-5 items-center justify-center rounded transition-colors disabled:opacity-50 ${
+                            colState === 'all-open'
+                              ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                              : colState === 'all-blocked'
+                                ? 'bg-red-100 text-red-600 hover:bg-red-200'
+                                : 'bg-amber-100 text-amber-600 hover:bg-amber-200'
+                          }`}
+                        >
+                          {isSavingCol ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : colState === 'all-open' ? (
+                            <Check className="h-3 w-3" />
+                          ) : colState === 'all-blocked' ? (
+                            <X className="h-3 w-3" />
+                          ) : (
+                            <Minus className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>
@@ -261,7 +344,7 @@ export function AvailabilityPage() {
                           onClick={() => toggleCell(unit.unit_number, d)}
                           onMouseEnter={() => setHover({ unitNumber: unit.unit_number, dateStr: d })}
                           onMouseLeave={() => setHover(null)}
-                          disabled={isSaving}
+                          disabled={isSaving || savingColumn === d}
                           title={isAvailable ? 'Click to block' : 'Click to open'}
                           className={`flex h-8 w-full items-center justify-center rounded-md transition-colors disabled:opacity-50 ${
                             isAvailable
