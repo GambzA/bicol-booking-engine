@@ -11,6 +11,72 @@ from app.models.base import TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.hotel import Hotel
+    from app.models.reference import ReferenceCountry
+
+
+class Promotion(TimestampMixin, Base):
+    __tablename__ = "promotions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    discount_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    discount_value: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    stay_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    stay_end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    booking_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    booking_end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    promo_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    hotel: Mapped["Hotel"] = relationship("Hotel")
+    accommodation_links: Mapped[list["PromotionAccommodation"]] = relationship(
+        "PromotionAccommodation", back_populates="promotion", cascade="all, delete-orphan"
+    )
+    rate_plan_links: Mapped[list["PromotionRatePlan"]] = relationship(
+        "PromotionRatePlan", back_populates="promotion", cascade="all, delete-orphan"
+    )
+
+
+class PromotionAccommodation(Base):
+    __tablename__ = "promotion_accommodations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    promotion_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("promotions.id", ondelete="CASCADE"), nullable=False
+    )
+    accommodation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accommodations.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    promotion: Mapped["Promotion"] = relationship("Promotion", back_populates="accommodation_links")
+    accommodation: Mapped["Accommodation"] = relationship("Accommodation")
+
+    __table_args__ = (
+        UniqueConstraint("promotion_id", "accommodation_id", name="uq_promotion_accommodation"),
+    )
+
+
+class PromotionRatePlan(Base):
+    __tablename__ = "promotion_rate_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    promotion_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("promotions.id", ondelete="CASCADE"), nullable=False
+    )
+    rate_plan_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("rate_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    promotion: Mapped["Promotion"] = relationship("Promotion", back_populates="rate_plan_links")
+    rate_plan: Mapped["RatePlan"] = relationship("RatePlan")
+
+    __table_args__ = (
+        UniqueConstraint("promotion_id", "rate_plan_id", name="uq_promotion_rate_plan"),
+    )
 
 
 class AccommodationType(str, enum.Enum):
@@ -174,14 +240,29 @@ class Guest(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
-    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(150), nullable=False)
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     mobile_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    date_of_birth: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     nationality: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    address_line_1: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    address_line_2: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    state_province: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    postal_code: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    country_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("references.countries.id", ondelete="SET NULL"), nullable=True
+    )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     hotel: Mapped["Hotel"] = relationship("Hotel")
+    country: Mapped[Optional["ReferenceCountry"]] = relationship("ReferenceCountry")
     bookings: Mapped[list["Booking"]] = relationship("Booking", back_populates="guest")
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip()
 
 
 class Booking(TimestampMixin, Base):
@@ -201,6 +282,12 @@ class Booking(TimestampMixin, Base):
         nullable=False, server_default="pending_payment",
     )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    promotion_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("promotions.id", ondelete="SET NULL"), nullable=True
+    )
+    promotion_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    discount_type_snapshot: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    discount_value_snapshot: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
 
     hotel: Mapped["Hotel"] = relationship("Hotel")
     accommodation: Mapped["Accommodation"] = relationship("Accommodation", back_populates="bookings")

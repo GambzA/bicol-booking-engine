@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { ArrowLeft, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { accommodationsApi, type Accommodation } from '../../../api/property/accommodations'
 import { Button } from '../../../components/common/Button'
 import { Input } from '../../../components/common/Input'
+import { SectionCard, Field, FormPage, FormHeader, FormBody } from '../../../components/common/FormLayout'
 import {
   RATE_PLAN_PRICING_METHODS,
   RATE_PLAN_INCLUSIONS,
@@ -46,38 +47,6 @@ function fmtCurrency(n: number): string {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-function SectionCard({ number, title, children }: {
-  number: number; title: string; children: React.ReactNode
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100">
-        <span className="flex-none w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">
-          {number}
-        </span>
-        <h2 className="font-semibold text-slate-900">{title}</h2>
-      </div>
-      <div className="px-6 py-5">{children}</div>
-    </div>
-  )
-}
-
-function Field({
-  label, required, error, span2, children,
-}: {
-  label: string; required?: boolean; error?: string; span2?: boolean; children: React.ReactNode
-}) {
-  return (
-    <div className={span2 ? 'sm:col-span-2' : ''}>
-      <label className="block text-sm font-medium text-slate-700 mb-1">
-        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-      {children}
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
-    </div>
-  )
-}
 
 function DirectionToggle({ value, onChange, disabled }: {
   value: Direction
@@ -330,44 +299,23 @@ export function RatePlanForm({ mode, defaults, onSubmit, saving }: RatePlanFormP
     : accommodations
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-[1100] bg-white border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigate('/rate-plans')}
-              className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-base font-semibold text-slate-900">
-                {mode === 'create' ? 'New Rate Plan' : 'Edit Rate Plan'}
-              </h1>
-              <p className="text-xs text-slate-400">
-                {mode === 'create'
-                  ? 'Create a new pricing tier for your accommodations'
-                  : 'Update rate plan details'}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" type="button" onClick={() => navigate('/rate-plans')}>
-              Cancel
-            </Button>
+    <FormPage>
+      <FormHeader
+        onBack={() => navigate('/rate-plans')}
+        title={mode === 'create' ? 'New Rate Plan' : 'Edit Rate Plan'}
+        subtitle={mode === 'create' ? 'Create a new pricing tier for your accommodations' : 'Update rate plan details'}
+        actions={
+          <>
+            <Button variant="secondary" type="button" onClick={() => navigate('/rate-plans')}>Cancel</Button>
             <Button onClick={handleSubmit(handleFormSubmit)} loading={saving}>
               {mode === 'create' ? 'Create Rate Plan' : 'Save Changes'}
             </Button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <form
-        onSubmit={handleSubmit(handleFormSubmit)}
-        className="max-w-4xl mx-auto px-6 py-8 space-y-6"
-      >
+      <form onSubmit={handleSubmit(handleFormSubmit)}>
+      <FormBody>
         {/* 1. Basic Info */}
         <SectionCard number={1} title="Basic Information">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -602,7 +550,8 @@ export function RatePlanForm({ mode, defaults, onSubmit, saving }: RatePlanFormP
             {mode === 'create' ? 'Create Rate Plan' : 'Save Changes'}
           </Button>
         </div>
+      </FormBody>
       </form>
-    </div>
+    </FormPage>
   )
 }

@@ -116,6 +116,11 @@ export const RATE_PLAN_INCLUSIONS = [
   { value: 'late_checkout', label: 'Late Checkout' },
 ]
 
+export const PROMOTION_DISCOUNT_TYPES = [
+  { value: 'percentage', label: 'Percentage Discount', description: 'Deduct a percentage from the booking price' },
+  { value: 'fixed_amount', label: 'Fixed Amount Discount', description: 'Deduct a fixed amount from the booking price' },
+]
+
 export const LANGUAGES = [
   { value: 'en', label: 'English' },
   { value: 'fil', label: 'Filipino' },

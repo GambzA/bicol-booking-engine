@@ -3,10 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, Upload, X, MapPin } from 'lucide-react'
+import { Upload, X, MapPin } from 'lucide-react'
 import { propertiesApi, uploadApi } from '../../api/admin/properties'
 import { Button } from '../../components/common/Button'
 import { Input } from '../../components/common/Input'
+import { SectionCard, Field, FormPage, FormHeader, FormBody } from '../../components/common/FormLayout'
 import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 import { HotelStatusBadge } from '../../components/admin/StatusBadge'
 import { PageLoader } from '../../components/common/PageLoader'
@@ -43,34 +44,6 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>
 
-function SectionCard({ id, number, title, children }: {
-  id: string; number: number; title: string; children: React.ReactNode
-}) {
-  return (
-    <div id={id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100">
-        <span className="flex-none w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">
-          {number}
-        </span>
-        <h2 className="font-semibold text-slate-900">{title}</h2>
-      </div>
-      <div className="px-6 py-5 grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
-    </div>
-  )
-}
-
-function Field({ label, required, children, span2 }: {
-  label: string; required?: boolean; children: React.ReactNode; span2?: boolean
-}) {
-  return (
-    <div className={span2 ? 'sm:col-span-2' : ''}>
-      <label className="block text-sm font-medium text-slate-700 mb-1">
-        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-      {children}
-    </div>
-  )
-}
 
 function SelectField({ options, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & {
   options: { value: string; label: string }[]
@@ -231,45 +204,21 @@ export function EditPropertyPage() {
 
   return (
     <>
-      <div className="min-h-screen bg-slate-50">
-        {/* Sticky header */}
-        <div className="sticky top-0 z-[1100] bg-white border-b border-slate-200">
-          <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigate(`/admin/properties/${id}`)}
-                className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
-              >
-                <ArrowLeft size={18} />
-              </button>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-base font-semibold text-slate-900">
-                    {hotel?.name ?? 'Edit Property'}
-                  </h1>
-                  {hotel && <HotelStatusBadge status={hotel.status} />}
-                </div>
-                <p className="text-xs text-slate-400">Edit property details</p>
-              </div>
-            </div>
-
+      <FormPage>
+        <FormHeader
+          onBack={() => navigate(`/admin/properties/${id}`)}
+          title={hotel?.name ?? 'Edit Property'}
+          subtitle="Edit property details"
+          actions={
             <div className="flex items-center gap-2">
-              {/* Status actions */}
               {hotel?.status === 'active' && (
-                <Button variant="secondary" size="sm" onClick={() => setConfirmAction('suspend')}>
-                  Suspend
-                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setConfirmAction('suspend')}>Suspend</Button>
               )}
               {hotel?.status === 'suspended' && (
-                <Button variant="secondary" size="sm" onClick={() => setConfirmAction('reactivate')}>
-                  Reactivate
-                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setConfirmAction('reactivate')}>Reactivate</Button>
               )}
               {hotel?.status !== 'deactivated' && (
-                <Button variant="danger" size="sm" onClick={() => setConfirmAction('deactivate')}>
-                  Deactivate
-                </Button>
+                <Button variant="danger" size="sm" onClick={() => setConfirmAction('deactivate')}>Deactivate</Button>
               )}
               <div className="w-px h-5 bg-slate-200 mx-1" />
               <Button variant="secondary" onClick={() => navigate(`/admin/properties/${id}`)}>Cancel</Button>
@@ -277,14 +226,14 @@ export function EditPropertyPage() {
                 {submitting ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
-          </div>
-        </div>
+          }
+        />
 
-        {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)}>
+        <FormBody>
 
           {/* 1. Basic Information */}
-          <SectionCard id="basic" number={1} title="Basic Information">
+          <SectionCard id="basic" number={1} title="Basic Information" grid>
             <Field label="Property Name" required span2>
               <Input {...register('name')} placeholder="e.g. Sorsogon Bay Hotel" />
               {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>}
@@ -310,7 +259,7 @@ export function EditPropertyPage() {
           </SectionCard>
 
           {/* 2. Contact Information */}
-          <SectionCard id="contact" number={2} title="Contact Information">
+          <SectionCard id="contact" number={2} title="Contact Information" grid>
             <p className="sm:col-span-2 -mt-1 -mb-1 text-xs text-slate-400">
               Primary contact for billing and notifications.
             </p>
@@ -326,7 +275,7 @@ export function EditPropertyPage() {
           </SectionCard>
 
           {/* 3. Location */}
-          <SectionCard id="location" number={3} title="Location">
+          <SectionCard id="location" number={3} title="Location" grid>
             <Field label="Country" required>
               <Input {...register('country')} placeholder="Philippines" />
               {errors.country && <p className="text-xs text-red-500 mt-1">{errors.country.message}</p>}
@@ -386,7 +335,7 @@ export function EditPropertyPage() {
           </SectionCard>
 
           {/* 4. Settings */}
-          <SectionCard id="settings" number={4} title="Property Settings">
+          <SectionCard id="settings" number={4} title="Property Settings" grid>
             <Field label="Default Currency">
               <SelectField
                 options={CURRENCIES}
@@ -411,7 +360,7 @@ export function EditPropertyPage() {
           </SectionCard>
 
           {/* 5. Media */}
-          <SectionCard id="media" number={5} title="Media">
+          <SectionCard id="media" number={5} title="Media" grid>
             <Field label="Logo">
               <ImageUploadField
                 label="Logo"
@@ -438,8 +387,9 @@ export function EditPropertyPage() {
               {submitting ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>
+        </FormBody>
         </form>
-      </div>
+      </FormPage>
 
       <ConfirmDialog
         open={confirmAction === 'suspend'}

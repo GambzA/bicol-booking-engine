@@ -9,6 +9,7 @@ from app.models.property_portal import (
     Accommodation, Guest, Booking, GuestPayment,
     AccommodationType, BookingStatus, GuestPaymentStatus,
 )
+from app.models.reference import ReferenceCountry, ReferenceStateProvince, ReferenceCity
 
 __all__ = [
     "Hotel", "HotelStatus", "PropertyType", "PropertyPhoto",
@@ -20,4 +21,5 @@ __all__ = [
     "AuditLog",
     "Accommodation", "Guest", "Booking", "GuestPayment",
     "AccommodationType", "BookingStatus", "GuestPaymentStatus",
+    "ReferenceCountry", "ReferenceStateProvince", "ReferenceCity",
 ]

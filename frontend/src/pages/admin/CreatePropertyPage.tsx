@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, Upload, X, MapPin, Copy, Check } from 'lucide-react'
+import { Upload, X, MapPin, Copy, Check } from 'lucide-react'
 import { propertiesApi, uploadApi } from '../../api/admin/properties'
 import { Button } from '../../components/common/Button'
 import { Input } from '../../components/common/Input'
+import { SectionCard, Field, FormPage, FormHeader, FormBody } from '../../components/common/FormLayout'
 import { useToast } from '../../components/common/useToast'
 import { PROPERTY_TYPES, CURRENCIES, TIMEZONES, LANGUAGES } from '../../constants/propertyOptions'
 
@@ -51,34 +52,6 @@ interface Credentials {
 }
 
 
-function SectionCard({ id, number, title, children }: {
-  id: string; number: number; title: string; children: React.ReactNode
-}) {
-  return (
-    <div id={id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100">
-        <span className="flex-none w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">
-          {number}
-        </span>
-        <h2 className="font-semibold text-slate-900">{title}</h2>
-      </div>
-      <div className="px-6 py-5 grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
-    </div>
-  )
-}
-
-function Field({ label, required, children, span2 }: {
-  label: string; required?: boolean; children: React.ReactNode; span2?: boolean
-}) {
-  return (
-    <div className={span2 ? 'sm:col-span-2' : ''}>
-      <label className="block text-sm font-medium text-slate-700 mb-1">
-        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-      {children}
-    </div>
-  )
-}
 
 function SelectField({ options, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & {
   options: { value: string; label: string }[]
@@ -246,37 +219,26 @@ export function CreatePropertyPage() {
 
   return (
     <>
-      <div className="min-h-screen bg-slate-50">
-        {/* Sticky header */}
-        <div className="sticky top-0 z-[1100] bg-white border-b border-slate-200">
-          <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/admin/properties')}
-                className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
-              >
-                <ArrowLeft size={18} />
-              </button>
-              <div>
-                <h1 className="text-base font-semibold text-slate-900">New Property</h1>
-                <p className="text-xs text-slate-400">Fill in the details below to register a new property</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
+      <FormPage>
+        <FormHeader
+          onBack={() => navigate('/admin/properties')}
+          title="New Property"
+          subtitle="Fill in the details below to register a new property"
+          actions={
+            <>
               <Button variant="secondary" onClick={() => navigate('/admin/properties')}>Cancel</Button>
               <Button onClick={handleSubmit(onSubmit)} disabled={submitting}>
                 {submitting ? 'Creating...' : 'Create Property'}
               </Button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        />
 
-        {/* Form body */}
-        <form onSubmit={handleSubmit(onSubmit)} className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)}>
+        <FormBody>
 
           {/* 1. Basic Information */}
-          <SectionCard id="basic" number={1} title="Basic Information">
+          <SectionCard id="basic" number={1} title="Basic Information" grid>
             <Field label="Property Name" required span2>
               <Input {...register('hotel_name')} placeholder="e.g. Sorsogon Bay Hotel" />
               {errors.hotel_name && <p className="text-xs text-red-500 mt-1">{errors.hotel_name.message}</p>}
@@ -303,7 +265,7 @@ export function CreatePropertyPage() {
           </SectionCard>
 
           {/* 2. Contact Information */}
-          <SectionCard id="contact" number={2} title="Contact Information">
+          <SectionCard id="contact" number={2} title="Contact Information" grid>
             <p className="sm:col-span-2 -mt-1 -mb-1 text-xs text-slate-400">
               Primary contact for billing and notifications.
             </p>
@@ -325,7 +287,7 @@ export function CreatePropertyPage() {
           </SectionCard>
 
           {/* 3. Location */}
-          <SectionCard id="location" number={3} title="Location">
+          <SectionCard id="location" number={3} title="Location" grid>
             <Field label="Country" required>
               <Input {...register('country')} placeholder="Philippines" />
               {errors.country && <p className="text-xs text-red-500 mt-1">{errors.country.message}</p>}
@@ -389,7 +351,7 @@ export function CreatePropertyPage() {
           </SectionCard>
 
           {/* 4. Property Administrator */}
-          <SectionCard id="admin" number={4} title="Property Administrator">
+          <SectionCard id="admin" number={4} title="Property Administrator" grid>
             <p className="sm:col-span-2 -mt-1 -mb-1 text-xs text-slate-400">
               The system will generate login credentials and display them after creation.
             </p>
@@ -411,7 +373,7 @@ export function CreatePropertyPage() {
           </SectionCard>
 
           {/* 5. Settings */}
-          <SectionCard id="settings" number={5} title="Property Settings">
+          <SectionCard id="settings" number={5} title="Property Settings" grid>
             <Field label="Default Currency">
               <SelectField
                 options={CURRENCIES}
@@ -436,7 +398,7 @@ export function CreatePropertyPage() {
           </SectionCard>
 
           {/* 6. Media */}
-          <SectionCard id="media" number={6} title="Media">
+          <SectionCard id="media" number={6} title="Media" grid>
             <Field label="Logo">
               <ImageUploadField
                 label=""
@@ -462,8 +424,9 @@ export function CreatePropertyPage() {
               {submitting ? 'Creating...' : 'Create Property'}
             </Button>
           </div>
+        </FormBody>
         </form>
-      </div>
+      </FormPage>
 
       {credentials && (
         <CredentialsModal

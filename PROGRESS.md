@@ -29,7 +29,19 @@ Features are built one at a time in dependency order.
 
 ---
 
-## Current Feature: None — ready for Feature 3 (Accommodations Management)
+## Current Feature: Reference Data + Guest Management (in progress)
+
+### Reference Data Schema (`references` PostgreSQL schema)
+- `references.countries` — 196 countries (ISO 3166-1 full fields: iso2/iso3/numeric/name/official/phone/currency/nationality/continent)
+- `references.states_provinces` — 158 rows (PH 83 provinces + NCR, US 54, AU 8, CA 13)
+- `references.cities` — 337 rows (world capitals, major PH/US/AU/CA cities, global notable cities)
+- Read-only API at `/reference/countries`, `/reference/countries/{id}/states`, `/reference/states/{id}/cities`, `/reference/cities/search`
+- Migrations: 0016 (schema + countries + states), 0017 (cities + South Korea fix)
+- Frontend: `CountrySelect`, `ProvinceSelect` components; `frontend/src/api/reference.ts`
+
+### Guest Management (property portal)
+- Expanded guest model: address_line_1, address_line_2, city, state_province, postal_code, country_id FK -> references.countries
+- GuestForm.tsx rewritten with FormLayout + RHF + Zod + CountrySelect + ProvinceSelect
 
 ---
 
@@ -135,3 +147,5 @@ docker compose exec backend alembic upgrade head
 | 2026-06-21 | Multi-tenancy via `hotel_id` FK on all tenant-scoped models | Simpler than schema-per-tenant for this scale |
 | 2026-06-21 | Refresh tokens stored in DB (not stateless) | Allows explicit logout and token revocation |
 | 2026-06-21 | Hotel registration creates both Hotel + User(OWNER) atomically | Single form UX; hotel cannot exist without an owner |
+| 2026-06-27 | Dedicated `references` PostgreSQL schema for geographical data | Isolates reference data from tenant data; schema name requires double-quoting in SQL (reserved word) |
+| 2026-06-27 | FK constraints between `references` schema tables added separately via `op.create_foreign_key` with `source_schema`/`referent_schema` | Avoids SQLAlchemy double-quoting bug when embedding FK strings inside `op.create_table` for schemas with reserved-word names |

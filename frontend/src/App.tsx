@@ -29,6 +29,13 @@ import { AdminLayout } from './components/admin/AdminLayout'
 import { RatePlansPage } from './pages/property/rate-plans/RatePlansPage'
 import { CreateRatePlanPage } from './pages/property/rate-plans/CreateRatePlanPage'
 import { EditRatePlanPage } from './pages/property/rate-plans/EditRatePlanPage'
+import { PromotionsPage } from './pages/property/promotions/PromotionsPage'
+import { CreatePromotionPage } from './pages/property/promotions/CreatePromotionPage'
+import { EditPromotionPage } from './pages/property/promotions/EditPromotionPage'
+import { GuestsPage } from './pages/property/guests/GuestsPage'
+import { CreateGuestPage } from './pages/property/guests/CreateGuestPage'
+import { EditGuestPage } from './pages/property/guests/EditGuestPage'
+import { GuestProfilePage } from './pages/property/guests/GuestProfilePage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -71,6 +78,13 @@ export default function App() {
           <Route path="/rate-plans" element={<RatePlansPage />} />
           <Route path="/rate-plans/new" element={<CreateRatePlanPage />} />
           <Route path="/rate-plans/:id/edit" element={<EditRatePlanPage />} />
+          <Route path="/promotions" element={<PromotionsPage />} />
+          <Route path="/promotions/new" element={<CreatePromotionPage />} />
+          <Route path="/promotions/:id/edit" element={<EditPromotionPage />} />
+          <Route path="/guests" element={<GuestsPage />} />
+          <Route path="/guests/new" element={<CreateGuestPage />} />
+          <Route path="/guests/:id" element={<GuestProfilePage />} />
+          <Route path="/guests/:id/edit" element={<EditGuestPage />} />
         </Route>
 
         {/* Admin public */}
