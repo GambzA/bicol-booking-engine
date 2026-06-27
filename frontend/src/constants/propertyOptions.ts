@@ -101,6 +101,21 @@ export const TIMEZONES = [
   { value: 'UTC', label: 'UTC' },
 ]
 
+export const RATE_PLAN_PRICING_METHODS = [
+  { value: 'fixed_price', label: 'Fixed Price', description: 'Set a specific rate per accommodation' },
+  { value: 'fixed_amount', label: 'Fixed Amount Adjustment', description: 'Add or subtract a fixed amount from the base rate' },
+  { value: 'percentage', label: 'Percentage Adjustment', description: 'Add or subtract a percentage of the base rate' },
+]
+
+export const RATE_PLAN_INCLUSIONS = [
+  { value: 'breakfast', label: 'Breakfast' },
+  { value: 'wifi', label: 'WiFi' },
+  { value: 'parking', label: 'Parking' },
+  { value: 'pool_access', label: 'Pool Access' },
+  { value: 'airport_shuttle', label: 'Airport Shuttle' },
+  { value: 'late_checkout', label: 'Late Checkout' },
+]
+
 export const LANGUAGES = [
   { value: 'en', label: 'English' },
   { value: 'fil', label: 'Filipino' },

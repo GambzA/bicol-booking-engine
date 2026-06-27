@@ -26,6 +26,9 @@ import { CommissionDetailPage } from './pages/admin/CommissionDetailPage'
 import { AuditLogsPage } from './pages/admin/AuditLogsPage'
 import { ReportsPage } from './pages/admin/ReportsPage'
 import { AdminLayout } from './components/admin/AdminLayout'
+import { RatePlansPage } from './pages/property/rate-plans/RatePlansPage'
+import { CreateRatePlanPage } from './pages/property/rate-plans/CreateRatePlanPage'
+import { EditRatePlanPage } from './pages/property/rate-plans/EditRatePlanPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -65,6 +68,9 @@ export default function App() {
           <Route path="/accommodations/availability" element={<AvailabilityPage />} />
           <Route path="/accommodations/rate-calendar" element={<RateCalendarPage />} />
           <Route path="/accommodations/:id/edit" element={<EditAccommodationPage />} />
+          <Route path="/rate-plans" element={<RatePlansPage />} />
+          <Route path="/rate-plans/new" element={<CreateRatePlanPage />} />
+          <Route path="/rate-plans/:id/edit" element={<EditRatePlanPage />} />
         </Route>
 
         {/* Admin public */}
