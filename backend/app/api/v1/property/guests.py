@@ -82,7 +82,7 @@ def _serialize(
         "state_province": guest.state_province,
         "postal_code": guest.postal_code,
         "country_id": str(guest.country_id) if guest.country_id else None,
-        "country_name": guest.country.name if guest.country else None,
+        "country_name": guest.country.country_name if guest.country else None,
         "notes": guest.notes,
         "booking_count": booking_count,
         "total_spent": str(total_spent),
