@@ -26,24 +26,24 @@ export interface ReferenceCity {
 
 export const referenceApi = {
   countries(): Promise<ReferenceCountry[]> {
-    return api.get<ReferenceCountry[]>("/reference/countries").then((r) => r.data);
+    return api.get<ReferenceCountry[]>("/api/v1/reference/countries").then((r) => r.data);
   },
 
   states(countryId: string): Promise<ReferenceStateProvince[]> {
     return api
-      .get<ReferenceStateProvince[]>(`/reference/countries/${countryId}/states`)
+      .get<ReferenceStateProvince[]>(`/api/v1/reference/countries/${countryId}/states`)
       .then((r) => r.data);
   },
 
   cities(stateId: string): Promise<ReferenceCity[]> {
     return api
-      .get<ReferenceCity[]>(`/reference/states/${stateId}/cities`)
+      .get<ReferenceCity[]>(`/api/v1/reference/states/${stateId}/cities`)
       .then((r) => r.data);
   },
 
   searchCities(q: string, countryId?: string): Promise<ReferenceCity[]> {
     return api
-      .get<ReferenceCity[]>("/reference/cities/search", {
+      .get<ReferenceCity[]>("/api/v1/reference/cities/search", {
         params: { q, ...(countryId ? { country_id: countryId } : {}) },
       })
       .then((r) => r.data);

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -7,6 +8,8 @@ import { Input } from '../../../components/common/Input'
 import { Textarea } from '../../../components/common/Textarea'
 import { CountrySelect } from '../../../components/common/CountrySelect'
 import { ProvinceSelect } from '../../../components/common/ProvinceSelect'
+import { CitySearch } from '../../../components/common/CitySearch'
+import { NationalitySelect } from '../../../components/common/NationalitySelect'
 import {
   SectionCard,
   Field,
@@ -14,6 +17,7 @@ import {
   FormHeader,
   FormBody,
 } from '../../../components/common/FormLayout'
+import { referenceApi, type ReferenceCountry } from '../../../api/reference'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -55,11 +59,14 @@ interface Props {
 
 export function GuestForm({ mode, defaults, onSubmit, saving }: Props) {
   const navigate = useNavigate()
+  const [countries, setCountries] = useState<ReferenceCountry[]>([])
+  const isFirstRender = useRef(true)
 
   const {
     register,
     handleSubmit,
     watch,
+    setValue,
     control,
     formState: { errors },
   } = useForm<FormValues>({
@@ -82,6 +89,24 @@ export function GuestForm({ mode, defaults, onSubmit, saving }: Props) {
   })
 
   const countryId = watch('country_id')
+
+  useEffect(() => {
+    referenceApi.countries().then(setCountries).catch(() => {})
+  }, [])
+
+  // Auto-populate nationality; clear city and state when country changes
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    const country = countries.find((c) => c.id === countryId)
+    if (country?.nationality) {
+      setValue('nationality', country.nationality)
+    }
+    setValue('city', '')
+    setValue('state_province', '')
+  }, [countryId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const title = mode === 'create' ? 'Add Guest' : 'Edit Guest'
   const subtitle =
@@ -123,8 +148,18 @@ export function GuestForm({ mode, defaults, onSubmit, saving }: Props) {
               <Input type="date" {...register('date_of_birth')} />
             </Field>
 
-            <Field label="Nationality">
-              <Input {...register('nationality')} placeholder="e.g. Filipino" />
+            <Field label="Nationality" hint="Auto-filled when country is selected">
+              <Controller
+                name="nationality"
+                control={control}
+                render={({ field }) => (
+                  <NationalitySelect
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
+              />
             </Field>
           </SectionCard>
 
@@ -147,14 +182,6 @@ export function GuestForm({ mode, defaults, onSubmit, saving }: Props) {
 
             <Field label="Address Line 2" span2>
               <Input {...register('address_line_2')} placeholder="Apartment, suite, floor (optional)" />
-            </Field>
-
-            <Field label="City">
-              <Input {...register('city')} placeholder="e.g. Manila" />
-            </Field>
-
-            <Field label="Postal Code">
-              <Input {...register('postal_code')} placeholder="e.g. 1000" />
             </Field>
 
             <Field label="Country">
@@ -184,6 +211,26 @@ export function GuestForm({ mode, defaults, onSubmit, saving }: Props) {
                   />
                 )}
               />
+            </Field>
+
+            <Field label="City">
+              <Controller
+                name="city"
+                control={control}
+                render={({ field }) => (
+                  <CitySearch
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    countryId={countryId || null}
+                    placeholder="Search city..."
+                  />
+                )}
+              />
+            </Field>
+
+            <Field label="Postal Code">
+              <Input {...register('postal_code')} placeholder="e.g. 1000" />
             </Field>
           </SectionCard>
 

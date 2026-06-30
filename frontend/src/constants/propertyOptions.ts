@@ -116,6 +116,12 @@ export const RATE_PLAN_INCLUSIONS = [
   { value: 'late_checkout', label: 'Late Checkout' },
 ]
 
+export const CHILD_CHARGE_TYPES = [
+  { value: 'free', label: 'Free' },
+  { value: 'fixed_amount', label: 'Fixed Amount (₱/night)' },
+  { value: 'percentage_of_base_rate', label: '% of Base Rate' },
+]
+
 export const PROMOTION_DISCOUNT_TYPES = [
   { value: 'percentage', label: 'Percentage Discount', description: 'Deduct a percentage from the booking price' },
   { value: 'fixed_amount', label: 'Fixed Amount Discount', description: 'Deduct a fixed amount from the booking price' },

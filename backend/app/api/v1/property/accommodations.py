@@ -6,12 +6,24 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
+from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.models.property_portal import Accommodation, AccommodationType, AccommodationUnitAvailability, AccommodationRateOverride, Booking, BookingStatus
+from app.models.property_portal import (
+    Accommodation, AccommodationChildPolicy, AccommodationType,
+    AccommodationUnitAvailability, AccommodationRateOverride, Booking, BookingStatus,
+)
 
 router = APIRouter(prefix="/accommodations", tags=["property-accommodations"])
+
+
+class ChildPolicyIn(BaseModel):
+    min_age: int
+    max_age: int
+    charge_type: str
+    charge_value: Optional[Decimal] = None
+    sort_order: int = 0
 
 
 class AccommodationCreate(BaseModel):
@@ -19,16 +31,21 @@ class AccommodationCreate(BaseModel):
     accommodation_type: str = "room"
     description: Optional[str] = None
     num_units: int = 1
+    base_occupancy: int = 1
     max_occupancy: int = 2
     max_adults: Optional[int] = None
     max_children: Optional[int] = None
     base_rate: Decimal
     weekend_rate: Optional[Decimal] = None
+    additional_adult_fee: Decimal = Decimal("0.00")
+    additional_adult_requires_extra_bed: bool = False
+    extra_bed_fee: Optional[Decimal] = None
     check_in_time: Optional[str] = None
     check_out_time: Optional[str] = None
     unit_prefix: Optional[int] = None
     amenities: Optional[list[Any]] = None
     images: Optional[list[Any]] = None
+    child_policies: list[ChildPolicyIn] = []
 
 
 class AccommodationUpdate(BaseModel):
@@ -36,16 +53,32 @@ class AccommodationUpdate(BaseModel):
     accommodation_type: Optional[str] = None
     description: Optional[str] = None
     num_units: Optional[int] = None
+    base_occupancy: Optional[int] = None
     max_occupancy: Optional[int] = None
     max_adults: Optional[int] = None
     max_children: Optional[int] = None
     base_rate: Optional[Decimal] = None
     weekend_rate: Optional[Decimal] = None
+    additional_adult_fee: Optional[Decimal] = None
+    additional_adult_requires_extra_bed: Optional[bool] = None
+    extra_bed_fee: Optional[Decimal] = None
     check_in_time: Optional[str] = None
     check_out_time: Optional[str] = None
     unit_prefix: Optional[int] = None
     amenities: Optional[list[Any]] = None
     images: Optional[list[Any]] = None
+    child_policies: Optional[list[ChildPolicyIn]] = None
+
+
+def _serialize_child_policy(p: AccommodationChildPolicy) -> dict:
+    return {
+        "id": str(p.id),
+        "min_age": p.min_age,
+        "max_age": p.max_age,
+        "charge_type": p.charge_type,
+        "charge_value": str(p.charge_value) if p.charge_value is not None else None,
+        "sort_order": p.sort_order,
+    }
 
 
 def _serialize(a: Accommodation) -> dict:
@@ -55,17 +88,22 @@ def _serialize(a: Accommodation) -> dict:
         "accommodation_type": a.accommodation_type.value,
         "description": a.description,
         "num_units": a.num_units,
+        "base_occupancy": a.base_occupancy,
         "max_occupancy": a.max_occupancy,
         "max_adults": a.max_adults,
         "max_children": a.max_children,
         "base_rate": str(a.base_rate),
         "weekend_rate": str(a.weekend_rate) if a.weekend_rate is not None else None,
+        "additional_adult_fee": str(a.additional_adult_fee),
+        "additional_adult_requires_extra_bed": a.additional_adult_requires_extra_bed,
+        "extra_bed_fee": str(a.extra_bed_fee) if a.extra_bed_fee is not None else None,
         "is_active": a.is_active,
         "check_in_time": a.check_in_time,
         "check_out_time": a.check_out_time,
         "unit_prefix": a.unit_prefix,
         "amenities": a.amenities or [],
         "images": a.images or [],
+        "child_policies": [_serialize_child_policy(p) for p in (a.child_policies or [])],
         "created_at": a.created_at.isoformat(),
         "updated_at": a.updated_at.isoformat(),
     }
@@ -77,7 +115,9 @@ async def _get_or_404(
     hotel_id: uuid.UUID,
 ) -> Accommodation:
     a = (await db.execute(
-        select(Accommodation).where(
+        select(Accommodation)
+        .options(selectinload(Accommodation.child_policies))
+        .where(
             Accommodation.id == accommodation_id,
             Accommodation.hotel_id == hotel_id,
             Accommodation.deleted_at.is_(None),
@@ -116,6 +156,7 @@ async def list_accommodations(
 
     items = list((await db.execute(
         select(Accommodation)
+        .options(selectinload(Accommodation.child_policies))
         .where(*base_where)
         .order_by(Accommodation.name)
         .offset((page - 1) * page_size)
@@ -232,11 +273,15 @@ async def create_accommodation(
         accommodation_type=acc_type,
         description=body.description,
         num_units=body.num_units,
+        base_occupancy=body.base_occupancy,
         max_occupancy=body.max_occupancy,
         max_adults=body.max_adults,
         max_children=body.max_children,
         base_rate=body.base_rate,
         weekend_rate=body.weekend_rate,
+        additional_adult_fee=body.additional_adult_fee,
+        additional_adult_requires_extra_bed=body.additional_adult_requires_extra_bed,
+        extra_bed_fee=body.extra_bed_fee,
         check_in_time=body.check_in_time,
         check_out_time=body.check_out_time,
         unit_prefix=body.unit_prefix,
@@ -244,9 +289,25 @@ async def create_accommodation(
         images=body.images or [],
     )
     db.add(accommodation)
+    await db.flush()
+
+    for i, policy in enumerate(body.child_policies):
+        db.add(AccommodationChildPolicy(
+            accommodation_id=accommodation.id,
+            min_age=policy.min_age,
+            max_age=policy.max_age,
+            charge_type=policy.charge_type,
+            charge_value=policy.charge_value,
+            sort_order=policy.sort_order if policy.sort_order else i,
+        ))
+
     await db.commit()
     await db.refresh(accommodation)
-    return _serialize(accommodation)
+    await db.execute(
+        select(AccommodationChildPolicy)
+        .where(AccommodationChildPolicy.accommodation_id == accommodation.id)
+    )
+    return _serialize(await _get_or_404(db, accommodation.id, user.hotel_id))
 
 
 class UnitAvailabilityRecord(BaseModel):
@@ -483,12 +544,29 @@ async def update_accommodation(
         except ValueError:
             raise HTTPException(status_code=422, detail=f"Invalid accommodation_type: {updates['accommodation_type']}")
 
+    new_policies = updates.pop("child_policies", None)
+
     for key, value in updates.items():
         setattr(a, key, value)
 
+    if new_policies is not None:
+        await db.execute(
+            delete(AccommodationChildPolicy).where(
+                AccommodationChildPolicy.accommodation_id == accommodation_id
+            )
+        )
+        for i, policy in enumerate(new_policies):
+            db.add(AccommodationChildPolicy(
+                accommodation_id=accommodation_id,
+                min_age=policy["min_age"],
+                max_age=policy["max_age"],
+                charge_type=policy["charge_type"],
+                charge_value=policy.get("charge_value"),
+                sort_order=policy.get("sort_order", i),
+            ))
+
     await db.commit()
-    await db.refresh(a)
-    return _serialize(a)
+    return _serialize(await _get_or_404(db, accommodation_id, user.hotel_id))
 
 
 @router.patch("/{accommodation_id}/toggle")

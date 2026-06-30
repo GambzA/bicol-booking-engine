@@ -118,12 +118,16 @@ class Accommodation(TimestampMixin, Base):
         nullable=False, server_default="room",
     )
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    base_occupancy: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     max_occupancy: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
     base_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
     weekend_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     num_units: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     max_adults: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     max_children: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    additional_adult_fee: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    additional_adult_requires_extra_bed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    extra_bed_fee: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     check_in_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     check_out_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
@@ -133,6 +137,30 @@ class Accommodation(TimestampMixin, Base):
 
     hotel: Mapped["Hotel"] = relationship("Hotel")
     bookings: Mapped[list["Booking"]] = relationship("Booking", back_populates="accommodation")
+    child_policies: Mapped[list["AccommodationChildPolicy"]] = relationship(
+        "AccommodationChildPolicy", back_populates="accommodation",
+        cascade="all, delete-orphan", order_by="AccommodationChildPolicy.sort_order",
+    )
+
+
+class AccommodationChildPolicy(Base):
+    __tablename__ = "accommodation_child_policies"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    accommodation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accommodations.id", ondelete="CASCADE"), nullable=False
+    )
+    min_age: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_age: Mapped[int] = mapped_column(Integer, nullable=False)
+    charge_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    charge_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    accommodation: Mapped["Accommodation"] = relationship("Accommodation", back_populates="child_policies")
 
 
 class AccommodationUnitAvailability(Base):

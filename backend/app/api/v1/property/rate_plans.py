@@ -157,6 +157,7 @@ async def list_rate_plans(
 
     plans = list((await db.execute(
         select(RatePlan)
+        .options(selectinload(RatePlan.accommodations).joinedload(RatePlanAccommodation.accommodation))
         .where(*base_where)
         .order_by(RatePlan.display_order, RatePlan.name)
         .offset((page - 1) * page_size)
@@ -165,12 +166,14 @@ async def list_rate_plans(
 
     items = []
     for rp in plans:
-        count = (await db.execute(
-            select(func.count(RatePlanAccommodation.id)).where(
-                RatePlanAccommodation.rate_plan_id == rp.id
-            )
-        )).scalar() or 0
-        items.append({**_serialize(rp), "accommodation_count": count})
+        items.append({
+            **_serialize(rp),
+            "accommodation_count": len(rp.accommodations),
+            "accommodations": [
+                {"accommodation_id": str(a.accommodation_id), "accommodation_name": a.accommodation.name}
+                for a in rp.accommodations
+            ],
+        })
 
     return {
         "items": items,

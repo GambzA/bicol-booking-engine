@@ -1,18 +1,19 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
+import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import * as LucideIcons from 'lucide-react'
 import {
   Plus, X, ImagePlus, ChevronDown, ChevronRight,
-  Tag, Check,
+  Tag, Check, Trash2,
 } from 'lucide-react'
 import { accommodationsApi, type AmenityItem, type AccommodationImage } from '../../../api/property/accommodations'
 import {
   ACCOMMODATION_TYPES,
   AMENITY_PRESETS,
   GALLERY_CATEGORIES,
+  CHILD_CHARGE_TYPES,
 } from '../../../constants/propertyOptions'
 import { Button } from '../../../components/common/Button'
 import { Input } from '../../../components/common/Input'
@@ -24,11 +25,20 @@ import { useToast } from '../../../components/common/useToast'
 type GalleryEntry = { id: string; url: string; uploading?: boolean }
 type GalleryState = Record<string, GalleryEntry[]>
 
+export interface ChildPolicyFormValues {
+  min_age: number
+  max_age: number
+  charge_type: 'free' | 'fixed_amount' | 'percentage_of_base_rate'
+  charge_value: number | null
+  sort_order: number
+}
+
 export interface AccommodationFormValues {
   name: string
   accommodation_type: string
   description: string
   num_units: number
+  base_occupancy: number
   max_occupancy: number
   max_adults: number | null
   max_children: number | null
@@ -37,6 +47,10 @@ export interface AccommodationFormValues {
   weekend_rate: number | null
   check_in_time: string
   check_out_time: string
+  additional_adult_fee: number
+  additional_adult_requires_extra_bed: boolean
+  extra_bed_fee: number | null
+  child_policies: ChildPolicyFormValues[]
 }
 
 export interface AccommodationFormDefaults {
@@ -44,6 +58,7 @@ export interface AccommodationFormDefaults {
   accommodation_type?: string
   description?: string
   num_units?: number
+  base_occupancy?: number
   max_occupancy?: number
   max_adults?: number | null
   max_children?: number | null
@@ -52,6 +67,10 @@ export interface AccommodationFormDefaults {
   weekend_rate?: number | string | null
   check_in_time?: string
   check_out_time?: string
+  additional_adult_fee?: number | string
+  additional_adult_requires_extra_bed?: boolean
+  extra_bed_fee?: number | string | null
+  child_policies?: ChildPolicyFormValues[]
   amenities?: AmenityItem[]
   images?: AccommodationImage[]
 }
@@ -65,11 +84,20 @@ export interface AccommodationFormProps {
 
 // ─── Zod schema ──────────────────────────────────────────────────────────────
 
+const childPolicySchema = z.object({
+  min_age: z.coerce.number().int().min(0, 'Required'),
+  max_age: z.coerce.number().int().min(0, 'Required'),
+  charge_type: z.enum(['free', 'fixed_amount', 'percentage_of_base_rate']),
+  charge_value: z.coerce.number().min(0).nullable().optional(),
+  sort_order: z.coerce.number().int().default(0),
+})
+
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
   accommodation_type: z.string().min(1),
   description: z.string().optional().default(''),
   num_units: z.coerce.number().int().min(1, 'At least 1 unit'),
+  base_occupancy: z.coerce.number().int().min(1, 'At least 1'),
   max_occupancy: z.coerce.number().int().min(1, 'At least 1 guest'),
   max_adults: z.coerce.number().int().min(0).nullable().optional(),
   max_children: z.coerce.number().int().min(0).nullable().optional(),
@@ -78,6 +106,48 @@ const schema = z.object({
   weekend_rate: z.coerce.number().min(0).nullable().optional(),
   check_in_time: z.string().optional().default(''),
   check_out_time: z.string().optional().default(''),
+  additional_adult_fee: z.coerce.number().min(0).default(0),
+  additional_adult_requires_extra_bed: z.boolean().default(false),
+  extra_bed_fee: z.coerce.number().min(0).nullable().optional(),
+  child_policies: z.array(childPolicySchema).default([]),
+}).superRefine((data, ctx) => {
+  if (data.base_occupancy > data.max_occupancy) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Cannot exceed max occupancy',
+      path: ['base_occupancy'],
+    })
+  }
+
+  const policies = data.child_policies
+  for (let i = 0; i < policies.length; i++) {
+    const p = policies[i]
+    if (p.min_age >= p.max_age) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Must be greater than min age',
+        path: ['child_policies', i, 'max_age'],
+      })
+    }
+    if (p.charge_type !== 'free' && (p.charge_value == null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Required',
+        path: ['child_policies', i, 'charge_value'],
+      })
+    }
+  }
+
+  const sorted = [...policies].map((p, i) => ({ ...p, i })).sort((a, b) => a.min_age - b.min_age)
+  for (let j = 1; j < sorted.length; j++) {
+    if (sorted[j].min_age < sorted[j - 1].max_age) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Age brackets must not overlap',
+        path: ['child_policies', sorted[j].i, 'min_age'],
+      })
+    }
+  }
 })
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -377,13 +447,14 @@ function ImageGallery({
 export function AccommodationForm({ mode, defaults, onSubmit, saving }: AccommodationFormProps) {
   const navigate = useNavigate()
 
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<AccommodationFormValues>({
+  const { register, handleSubmit, watch, setValue, control, formState: { errors } } = useForm<AccommodationFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       name: defaults?.name ?? '',
       accommodation_type: defaults?.accommodation_type ?? 'room',
       description: defaults?.description ?? '',
       num_units: defaults?.num_units ?? 1,
+      base_occupancy: defaults?.base_occupancy ?? 1,
       max_occupancy: defaults?.max_occupancy ?? 2,
       max_adults: defaults?.max_adults ?? undefined,
       max_children: defaults?.max_children ?? undefined,
@@ -392,7 +463,16 @@ export function AccommodationForm({ mode, defaults, onSubmit, saving }: Accommod
       weekend_rate: defaults?.weekend_rate != null ? Number(defaults.weekend_rate) : undefined,
       check_in_time: defaults?.check_in_time ?? '14:00',
       check_out_time: defaults?.check_out_time ?? '12:00',
+      additional_adult_fee: defaults?.additional_adult_fee != null ? Number(defaults.additional_adult_fee) : 0,
+      additional_adult_requires_extra_bed: defaults?.additional_adult_requires_extra_bed ?? false,
+      extra_bed_fee: defaults?.extra_bed_fee != null ? Number(defaults.extra_bed_fee) : undefined,
+      child_policies: defaults?.child_policies ?? [],
     },
+  })
+
+  const { fields: policyFields, append: appendPolicy, remove: removePolicy } = useFieldArray({
+    control,
+    name: 'child_policies',
   })
 
   // Amenities state
@@ -472,6 +552,14 @@ export function AccommodationForm({ mode, defaults, onSubmit, saving }: Accommod
                 placeholder="1"
               />
             </Field>
+            <Field label="Base Occupancy" required error={errors.base_occupancy?.message} hint="Guests included in base rate">
+              <Input
+                type="number"
+                min={1}
+                {...register('base_occupancy')}
+                placeholder="1"
+              />
+            </Field>
             <Field label="Max Occupancy" required error={errors.max_occupancy?.message}>
               <Input
                 type="number"
@@ -496,7 +584,7 @@ export function AccommodationForm({ mode, defaults, onSubmit, saving }: Accommod
                 placeholder="Optional"
               />
             </Field>
-            <Field label="Room Number Prefix" span2>
+            <Field label="Room Number Prefix">
               <Input
                 type="number"
                 min={0}
@@ -562,13 +650,148 @@ export function AccommodationForm({ mode, defaults, onSubmit, saving }: Accommod
           </div>
         </SectionCard>
 
-        {/* 4. Amenities */}
-        <SectionCard number={4} title="Amenities">
+        {/* 4. Additional Guest Pricing */}
+        <SectionCard number={4} title="Additional Guest Pricing">
+          <div className="space-y-6">
+            {/* Adult fee row */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Additional Adult Fee (₱ / night)" hint="Per adult exceeding base occupancy" error={errors.additional_adult_fee?.message}>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  {...register('additional_adult_fee')}
+                  placeholder="0.00"
+                />
+              </Field>
+              <Field label="Extra Bed Fee (₱ / night)" hint="Optional; charged when extra bed is required">
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  {...register('extra_bed_fee')}
+                  placeholder="Optional"
+                />
+              </Field>
+              <Field label="Extra Bed Policy">
+                <label className="flex items-center gap-2 cursor-pointer pt-2">
+                  <input
+                    type="checkbox"
+                    {...register('additional_adult_requires_extra_bed')}
+                    className="h-4 w-4 rounded border-slate-300 text-slate-800 focus:ring-slate-500"
+                  />
+                  <span className="text-sm text-slate-700">Extra bed required for additional adults</span>
+                </label>
+              </Field>
+            </div>
+
+            {/* Child pricing */}
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Child Pricing</p>
+                  <p className="text-xs text-slate-500">Age brackets applied at time of stay</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => appendPolicy({ min_age: 0, max_age: 12, charge_type: 'free', charge_value: null, sort_order: policyFields.length })}
+                  disabled={policyFields.length >= 6}
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Plus size={13} /> Add Bracket
+                </button>
+              </div>
+
+              {policyFields.length === 0 && (
+                <p className="text-xs text-slate-400">No child pricing rules defined. Children will be charged the base adult rate.</p>
+              )}
+
+              {policyFields.length > 0 && (
+                <div className="space-y-2">
+                  {/* Header row */}
+                  <div className="grid grid-cols-[80px_80px_1fr_120px_32px] gap-2 px-1">
+                    <span className="text-xs font-medium text-slate-500">Min Age</span>
+                    <span className="text-xs font-medium text-slate-500">Max Age</span>
+                    <span className="text-xs font-medium text-slate-500">Charge Type</span>
+                    <span className="text-xs font-medium text-slate-500">Value</span>
+                    <span />
+                  </div>
+
+                  {policyFields.map((field, i) => {
+                    const chargeType = watch(`child_policies.${i}.charge_type`)
+                    return (
+                      <div key={field.id} className="grid grid-cols-[80px_80px_1fr_120px_32px] gap-2 items-start">
+                        <div>
+                          <input
+                            type="number"
+                            min={0}
+                            {...register(`child_policies.${i}.min_age`)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                            placeholder="0"
+                          />
+                          {errors.child_policies?.[i]?.min_age && (
+                            <p className="mt-0.5 text-xs text-red-600">{errors.child_policies[i]?.min_age?.message}</p>
+                          )}
+                        </div>
+                        <div>
+                          <input
+                            type="number"
+                            min={0}
+                            {...register(`child_policies.${i}.max_age`)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                            placeholder="12"
+                          />
+                          {errors.child_policies?.[i]?.max_age && (
+                            <p className="mt-0.5 text-xs text-red-600">{errors.child_policies[i]?.max_age?.message}</p>
+                          )}
+                        </div>
+                        <div>
+                          <select
+                            {...register(`child_policies.${i}.charge_type`)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                          >
+                            {CHILD_CHARGE_TYPES.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            disabled={chargeType === 'free'}
+                            {...register(`child_policies.${i}.charge_value`)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-50 disabled:text-slate-400"
+                            placeholder={chargeType === 'percentage_of_base_rate' ? '0' : '0.00'}
+                          />
+                          {errors.child_policies?.[i]?.charge_value && (
+                            <p className="mt-0.5 text-xs text-red-600">{errors.child_policies[i]?.charge_value?.message}</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removePolicy(i)}
+                          className="mt-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* 5. Amenities */}
+        <SectionCard number={5} title="Amenities">
           <AmenityPicker selected={amenities} onChange={setAmenities} />
         </SectionCard>
 
-        {/* 5. Images */}
-        <SectionCard number={5} title="Images">
+        {/* 6. Images */}
+        <SectionCard number={6} title="Images">
           <ImageGallery gallery={gallery} onChange={setGallery} />
         </SectionCard>
 

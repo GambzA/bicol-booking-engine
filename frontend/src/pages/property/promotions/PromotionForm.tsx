@@ -492,8 +492,12 @@ export function PromotionForm({ mode, defaults, onSubmit, saving }: PromotionFor
                         />
                         <div>
                           <p className="text-sm font-medium text-slate-800">{rp.name}</p>
-                          {rp.description && (
-                            <p className="text-xs text-slate-400">{rp.description}</p>
+                          {rp.accommodations && rp.accommodations.length > 0 ? (
+                            <p className="text-xs text-slate-400">
+                              {rp.accommodations.map((a) => a.accommodation_name).join(', ')}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-slate-400">No rooms linked</p>
                           )}
                         </div>
                       </label>

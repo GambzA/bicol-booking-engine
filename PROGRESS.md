@@ -32,12 +32,14 @@ Features are built one at a time in dependency order.
 ## Current Feature: Reference Data + Guest Management (in progress)
 
 ### Reference Data Schema (`references` PostgreSQL schema)
-- `references.countries` — 196 countries (ISO 3166-1 full fields: iso2/iso3/numeric/name/official/phone/currency/nationality/continent)
-- `references.states_provinces` — 158 rows (PH 83 provinces + NCR, US 54, AU 8, CA 13)
-- `references.cities` — 337 rows (world capitals, major PH/US/AU/CA cities, global notable cities)
-- Read-only API at `/reference/countries`, `/reference/countries/{id}/states`, `/reference/states/{id}/cities`, `/reference/cities/search`
-- Migrations: 0016 (schema + countries + states), 0017 (cities + South Korea fix)
-- Frontend: `CountrySelect`, `ProvinceSelect` components; `frontend/src/api/reference.ts`
+- `references.countries` — 250 countries (ISO 3166-1 full fields: iso2/iso3/numeric/name/official/phone/currency/nationality/continent)
+- `references.states_provinces` — 5,249 rows (all countries; ISO 3166-2 subdivisions)
+- `references.cities` — 152,967 rows (full worldwide set with lat/lon/timezone)
+- Source: dr5hn/countries-states-cities-database, release v3.2-export.5 (ODbL v1.0, attribution required). Vendored gzipped under `backend/alembic/data/dr5hn/`.
+- City search backed by a `pg_trgm` GIN index on `lower(city_name)` (`ix_ref_cities_name_trgm`) — substring search stays sub-ms at 150k+ rows.
+- Read-only API at `/api/v1/reference/countries`, `/api/v1/reference/countries/{id}/states`, `/api/v1/reference/states/{id}/cities`, `/api/v1/reference/cities/search`
+- Migrations: 0016 (schema + countries + states), 0017 (curated cities + South Korea fix), 0019 (full dr5hn geo: countries top-up + all states/cities + trigram index)
+- Frontend: `CountrySelect`, `ProvinceSelect`, `CitySearch`, `NationalitySelect` components; `frontend/src/api/reference.ts`
 
 ### Guest Management (property portal)
 - Expanded guest model: address_line_1, address_line_2, city, state_province, postal_code, country_id FK -> references.countries
@@ -149,3 +151,6 @@ docker compose exec backend alembic upgrade head
 | 2026-06-21 | Hotel registration creates both Hotel + User(OWNER) atomically | Single form UX; hotel cannot exist without an owner |
 | 2026-06-27 | Dedicated `references` PostgreSQL schema for geographical data | Isolates reference data from tenant data; schema name requires double-quoting in SQL (reserved word) |
 | 2026-06-27 | FK constraints between `references` schema tables added separately via `op.create_foreign_key` with `source_schema`/`referent_schema` | Avoids SQLAlchemy double-quoting bug when embedding FK strings inside `op.create_table` for schemas with reserved-word names |
+| 2026-06-30 | Replace curated geo seed with full dr5hn dataset (250 countries / 5,249 states / 152,967 cities) via migration 0019 | Curated 337-city set was too sparse; dr5hn maps 1:1 to the 3-table schema and ships lat/lon/timezone. CSVs vendored gzipped (~5MB) and loaded with batched inserts under asyncpg |
+| 2026-06-30 | Countries topped-up (ON CONFLICT DO NOTHING), states + cities wiped and reloaded | Existing country UUIDs are referenced by `guests.country_id`; states/cities have no external FKs (`guests.state_province`/`city` are strings), so they can be safely rebuilt |
+| 2026-06-30 | Dropped 0017 partial unique indexes on cities; added `pg_trgm` GIN index | Full dataset has 324 legitimate duplicate (state, name) localities; uniqueness no longer holds. Trigram index keeps `LIKE '%q%'` city search sub-ms at 150k rows |
