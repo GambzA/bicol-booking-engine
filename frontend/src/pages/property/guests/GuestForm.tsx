@@ -60,7 +60,7 @@ interface Props {
 export function GuestForm({ mode, defaults, onSubmit, saving }: Props) {
   const navigate = useNavigate()
   const [countries, setCountries] = useState<ReferenceCountry[]>([])
-  const isFirstRender = useRef(true)
+  const prevCountryIdRef = useRef<string | undefined>(defaults?.country_id ?? '')
 
   const {
     register,
@@ -94,12 +94,13 @@ export function GuestForm({ mode, defaults, onSubmit, saving }: Props) {
     referenceApi.countries().then(setCountries).catch(() => {})
   }, [])
 
-  // Auto-populate nationality; clear city and state when country changes
+  // Auto-populate nationality; clear city and state when country changes.
+  // Compare against the previous value so this is a no-op on mount (including
+  // React Strict Mode's double-invocation) and only fires on real user changes.
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
-    }
+    const prev = prevCountryIdRef.current
+    prevCountryIdRef.current = countryId
+    if (prev === countryId) return
     const country = countries.find((c) => c.id === countryId)
     if (country?.nationality) {
       setValue('nationality', country.nationality)
