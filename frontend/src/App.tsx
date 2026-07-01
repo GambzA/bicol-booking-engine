@@ -35,6 +35,10 @@ import { EditPromotionPage } from './pages/property/promotions/EditPromotionPage
 import { PackagesPage } from './pages/property/packages/PackagesPage'
 import { CreatePackagePage } from './pages/property/packages/CreatePackagePage'
 import { EditPackagePage } from './pages/property/packages/EditPackagePage'
+import { SettingsPage } from './pages/property/settings/SettingsPage'
+import { TaxesPage } from './pages/property/settings/taxes/TaxesPage'
+import { CreateTaxPage } from './pages/property/settings/taxes/CreateTaxPage'
+import { EditTaxPage } from './pages/property/settings/taxes/EditTaxPage'
 import { BookingsPage } from './pages/property/bookings/BookingsPage'
 import { CreateBookingPage } from './pages/property/bookings/CreateBookingPage'
 import { BookingDetailPage } from './pages/property/bookings/BookingDetailPage'
@@ -97,6 +101,10 @@ export default function App() {
           <Route path="/guests/new" element={<CreateGuestPage />} />
           <Route path="/guests/:id" element={<GuestProfilePage />} />
           <Route path="/guests/:id/edit" element={<EditGuestPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/taxes" element={<TaxesPage />} />
+          <Route path="/settings/taxes/new" element={<CreateTaxPage />} />
+          <Route path="/settings/taxes/:id/edit" element={<EditTaxPage />} />
         </Route>
 
         {/* Admin public */}

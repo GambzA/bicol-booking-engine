@@ -14,7 +14,7 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.property_portal import (
     Accommodation, Guest, Booking, BookingRoom, BookingRoomGuest, BookingStatus, BookingSource,
-    BookingNightlyRate, BookingStatusHistory, GuestPayment, GuestPaymentStatus,
+    BookingNightlyRate, BookingStatusHistory, BookingTax, GuestPayment, GuestPaymentStatus,
     RatePlan, RatePlanAccommodation, Promotion, PromotionAccommodation, PromotionRatePlan,
     Package, PackageAccommodation,
 )
@@ -22,6 +22,7 @@ from app.services.pricing import (
     compute_quote, count_available_units, validate_occupancy, validate_dates,
     money, PricingError, Quote, ACTIVE_BOOKING_STATUSES,
 )
+from app.services.taxes import compute_taxes, added_tax_total, load_active_taxes
 
 router = APIRouter(prefix="/bookings", tags=["property-bookings"])
 
@@ -153,6 +154,7 @@ def _detail_options():
         selectinload(Booking.rooms).selectinload(BookingRoom.nightly_rates),
         selectinload(Booking.status_history),
         selectinload(Booking.payments),
+        selectinload(Booking.taxes),
     )
 
 
@@ -289,6 +291,23 @@ def _serialize_detail(b: Booking) -> dict:
         "package_amount": str(_sum("package_amount")),
         "taxes_fees_amount": str(_sum("taxes_fees_amount")),
         "subtotal_amount": str(_sum("subtotal_amount")),
+        # net (pre-tax) booking subtotal = sum of room totals; tax lines + total
+        "net_amount": str(b.subtotal_amount),
+        "tax_total": str(b.tax_total),
+        "taxes": [
+            {
+                "id": str(t.id),
+                "tax_id": str(t.tax_id) if t.tax_id else None,
+                "name": t.name_snapshot,
+                "tax_type": t.tax_type_snapshot,
+                "rate": str(t.rate_snapshot),
+                "calculation_method": t.calculation_method_snapshot,
+                "application_scope": t.application_scope_snapshot,
+                "amount": str(t.calculated_amount),
+                "is_included": t.is_included,
+            }
+            for t in b.taxes
+        ],
         "total_amount": str(total),
         # payment summary
         "payment_summary": {
@@ -689,6 +708,8 @@ async def create_booking(
 
     grand_total = ZERO
     total_guests = 0
+    total_adults = 0
+    total_children = 0
     for idx, r in enumerate(body.rooms):
         acc = acc_map[r.accommodation_id]
         adults = len(r.adults)
@@ -760,8 +781,34 @@ async def create_booking(
 
         grand_total += q.total_amount
         total_guests += adults + len(children_ages)
+        total_adults += adults
+        total_children += len(children_ages)
 
-    b.total_amount = money(grand_total)
+    # Reservation-level taxes over the net (pre-tax) subtotal = sum of room totals.
+    net_subtotal = money(grand_total)
+    nights = (body.check_out_date - body.check_in_date).days
+    active_taxes = await load_active_taxes(db, hotel_id)
+    tax_lines = compute_taxes(
+        active_taxes, net_subtotal, nights, total_guests, total_adults, total_children
+    )
+    for order, line in enumerate(tax_lines):
+        db.add(BookingTax(
+            booking_id=b.id,
+            tax_id=line.tax_id,
+            name_snapshot=line.name,
+            tax_type_snapshot=line.tax_type,
+            rate_snapshot=line.rate,
+            calculation_method_snapshot=line.calculation_method,
+            application_scope_snapshot=line.application_scope,
+            calculated_amount=line.amount,
+            is_included=line.is_included,
+            display_order=order,
+        ))
+    tax_total = added_tax_total(tax_lines)
+
+    b.subtotal_amount = net_subtotal
+    b.tax_total = tax_total
+    b.total_amount = money(net_subtotal + tax_total)
     b.num_guests = total_guests
 
     db.add(BookingStatusHistory(

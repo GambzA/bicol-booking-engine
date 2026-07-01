@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, BedDouble, BookOpen, Users, CreditCard,
   Settings, BarChart3, LogOut, Plug, UserCog,
-  ChevronRight, List, CalendarDays, Tag, DollarSign, Percent, Gift,
+  ChevronRight, List, CalendarDays, Tag, DollarSign, Percent, Gift, Receipt,
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { authApi } from '../../api/auth'
@@ -19,7 +19,6 @@ const NAV = [
   { to: '/gateways', label: 'Payment Gateways', icon: Plug },
   { to: '/staff', label: 'Users & Staff', icon: UserCog },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
 const NAV_ITEM_CLASS = (isActive: boolean) =>
@@ -35,6 +34,8 @@ export function PropertyLayout() {
   const location = useLocation()
   const isOnAccommodations = location.pathname.startsWith('/accommodations')
   const [accOpen, setAccOpen] = useState(() => isOnAccommodations)
+  const isOnSettings = location.pathname.startsWith('/settings')
+  const [settingsOpen, setSettingsOpen] = useState(() => isOnSettings)
 
   const handleLogout = async () => {
     try {
@@ -121,6 +122,33 @@ export function PropertyLayout() {
               {label}
             </NavLink>
           ))}
+
+          {/* Settings expandable group */}
+          <button
+            onClick={() => setSettingsOpen((o) => !o)}
+            className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors ${
+              isOnSettings ? 'text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <Settings size={16} />
+            <span className="flex-1 text-left">Settings</span>
+            <ChevronRight
+              size={14}
+              className={`transition-transform duration-150 ${settingsOpen ? 'rotate-90' : ''}`}
+            />
+          </button>
+
+          {settingsOpen && (
+            <div className="pl-4">
+              <NavLink
+                to="/settings/taxes"
+                className={({ isActive }) => NAV_ITEM_CLASS(isActive)}
+              >
+                <Receipt size={14} />
+                Tax Configuration
+              </NavLink>
+            </div>
+          )}
         </nav>
 
         <div className="border-t border-slate-700 px-5 py-4">

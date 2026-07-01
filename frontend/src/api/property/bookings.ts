@@ -148,6 +148,18 @@ export interface BookingRoom {
   nightly_rates: NightlyRate[]
 }
 
+export interface BookingTaxLine {
+  id: string
+  tax_id: string | null
+  name: string
+  tax_type: string
+  rate: string
+  calculation_method: string
+  application_scope: string
+  amount: string
+  is_included: boolean
+}
+
 export interface BookingDetail {
   id: string
   booking_number: string
@@ -171,6 +183,9 @@ export interface BookingDetail {
   package_amount: string
   taxes_fees_amount: string
   subtotal_amount: string
+  net_amount: string
+  tax_total: string
+  taxes: BookingTaxLine[]
   total_amount: string
   payment_summary: PaymentSummary
   timeline: TimelineEntry[]

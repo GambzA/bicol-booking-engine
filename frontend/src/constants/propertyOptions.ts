@@ -144,6 +144,26 @@ export const PROMOTION_DISCOUNT_TYPES = [
   { value: 'fixed_amount', label: 'Fixed Amount Discount', description: 'Deduct a fixed amount from the booking price' },
 ]
 
+export const MAX_TAX_PERCENTAGE = 100
+
+export const TAX_TYPES = [
+  { value: 'percentage', label: 'Percentage', description: 'A percentage of the booking subtotal' },
+  { value: 'fixed_amount', label: 'Fixed Amount', description: 'A flat peso amount' },
+]
+
+export const TAX_CALCULATION_METHODS = [
+  { value: 'exclusive', label: 'Added to Price', description: 'Calculated and added on top of the subtotal' },
+  { value: 'inclusive', label: 'Included in Price', description: 'Already part of the price; extracted for display' },
+]
+
+export const TAX_APPLICATION_SCOPES = [
+  { value: 'per_booking', label: 'Per Booking', description: 'Applied once per reservation' },
+  { value: 'per_night', label: 'Per Night', description: 'Applied once for each booked night' },
+  { value: 'per_guest', label: 'Per Guest', description: 'Applied to every guest in the booking' },
+  { value: 'per_adult', label: 'Per Adult', description: 'Applied only to adult guests' },
+  { value: 'per_child', label: 'Per Child', description: 'Applied only to child guests' },
+]
+
 export const BOOKING_STATUSES = [
   { value: 'pending', label: 'Pending', color: 'amber' },
   { value: 'confirmed', label: 'Confirmed', color: 'emerald' },

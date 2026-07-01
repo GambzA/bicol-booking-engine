@@ -4,6 +4,7 @@ import { ArrowLeft, Search, Check, Plus, Trash2, X } from 'lucide-react'
 import {
   bookingsApi, type AvailabilityResult, type BookingQuote, type RoomInput,
 } from '../../../api/property/bookings'
+import { taxesApi, type TaxLine } from '../../../api/property/taxes'
 import { guestsApi, type Guest } from '../../../api/property/guests'
 import { BOOKING_SOURCES } from '../../../constants/propertyOptions'
 import { Button } from '../../../components/common/Button'
@@ -297,6 +298,24 @@ export function CreateBookingPage() {
   // ─── Confirm ──────────────────────────────────────────────────────────────
   const grandTotal = rooms.reduce((sum, r) => sum + (r.quote ? parseFloat(r.quote.total_amount) : 0), 0)
   const allPriced = rooms.length > 0 && rooms.every((r) => r.quote && !r.error && !r.quoting)
+  const totalAdults = rooms.reduce((s, r) => s + r.adults.length, 0)
+  const totalChildren = rooms.reduce((s, r) => s + r.children.length, 0)
+
+  // Reservation-level taxes previewed live once the rooms are priced. Computed
+  // server-side (single source of truth) over the summed net subtotal.
+  const [taxLines, setTaxLines] = useState<TaxLine[]>([])
+  const [taxTotal, setTaxTotal] = useState(0)
+  useEffect(() => {
+    if (!allPriced) { setTaxLines([]); setTaxTotal(0); return }
+    let cancelled = false
+    taxesApi
+      .preview({ subtotal: String(grandTotal), nights, num_adults: totalAdults, num_children: totalChildren })
+      .then((r) => { if (!cancelled) { setTaxLines(r.data.taxes); setTaxTotal(parseFloat(r.data.tax_total)) } })
+      .catch(() => { if (!cancelled) { setTaxLines([]); setTaxTotal(0) } })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPriced, grandTotal, nights, totalAdults, totalChildren])
+  const finalTotal = grandTotal + taxTotal
 
   const handleConfirm = async (status: 'confirmed' | 'pending') => {
     if (!guest || !allPriced) return
@@ -436,82 +455,99 @@ export function CreateBookingPage() {
                 </div>
               )}
 
-              {rooms.length > 0 && <h3 className="text-sm font-semibold text-slate-800">Your rooms</h3>}
+              {rooms.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-800">Your rooms</h3>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">{rooms.length}</span>
+                </div>
+              )}
               {rooms.map((room, idx) => (
-                <div key={room.key} className="rounded-xl border border-slate-200 bg-white p-5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">Room {idx + 1} &middot; {room.acc.name}</p>
+                <div key={room.key} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  {/* Header */}
+                  <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+                    <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+                      {idx + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-800">{room.acc.name}</p>
                       <p className="text-xs text-slate-400">{room.acc.accommodation_type}</p>
                     </div>
-                    <button onClick={() => removeRoom(room.key)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
+                    <button onClick={() => removeRoom(room.key)} className="flex-none rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
                       <Trash2 size={16} />
                     </button>
                   </div>
 
-                  {/* Offerings */}
-                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="space-y-5 px-5 py-5">
+                    {/* Offerings */}
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-500">Rate Plan</label>
-                      <Select
-                        value={room.ratePlanId}
-                        onChange={(e) => setOffering(room.key, 'ratePlanId', e.target.value)}
-                        options={[{ value: '', label: 'Standard (base rate)' }, ...room.acc.rate_plans.map((rp) => ({ value: rp.id, label: rp.name }))]}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-500">Promotion</label>
-                      <Select
-                        value={room.promotionId}
-                        onChange={(e) => setOffering(room.key, 'promotionId', e.target.value)}
-                        options={[{ value: '', label: 'None' }, ...room.acc.promotions.map((p) => ({ value: p.id, label: p.name }))]}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-500">Package</label>
-                      <Select
-                        value={room.packageId}
-                        onChange={(e) => setOffering(room.key, 'packageId', e.target.value)}
-                        options={[{ value: '', label: 'None' }, ...room.acc.packages.map((p) => ({ value: p.id, label: p.name }))]}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Occupancy (names are captured in the Guests step) */}
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-500">Adults</label>
-                      <div className="w-24">
-                        <NumberField value={room.adults.length} onCommit={(n) => setAdultCount(room.key, n)} min={1} max={room.acc.max_occupancy || undefined} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="mb-1 flex items-center justify-between">
-                        <label className="text-xs font-medium text-slate-500">Children</label>
-                        <Button variant="secondary" onClick={() => addChild(room.key)}><Plus size={14} /> Add child</Button>
-                      </div>
-                      {room.children.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {room.children.map((c, i) => (
-                            <div key={i} className="flex items-center gap-1 rounded-lg border border-slate-100 px-2 py-1">
-                              <div className="w-16">
-                                <NumberField value={c.age} onCommit={(n) => setChildAge(room.key, i, n)} min={0} max={17} />
-                              </div>
-                              <span className="text-xs text-slate-400">yrs</span>
-                              <button onClick={() => removeChild(room.key, i)} className="text-slate-400 hover:text-red-600">
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ))}
+                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Offerings</p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-500">Rate Plan</label>
+                          <Select
+                            value={room.ratePlanId}
+                            onChange={(e) => setOffering(room.key, 'ratePlanId', e.target.value)}
+                            options={[{ value: '', label: 'Standard (base rate)' }, ...room.acc.rate_plans.map((rp) => ({ value: rp.id, label: rp.name }))]}
+                          />
                         </div>
-                      ) : (
-                        <p className="text-xs text-slate-400">No children</p>
-                      )}
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-500">Promotion</label>
+                          <Select
+                            value={room.promotionId}
+                            onChange={(e) => setOffering(room.key, 'promotionId', e.target.value)}
+                            options={[{ value: '', label: 'None' }, ...room.acc.promotions.map((p) => ({ value: p.id, label: p.name }))]}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-500">Package</label>
+                          <Select
+                            value={room.packageId}
+                            onChange={(e) => setOffering(room.key, 'packageId', e.target.value)}
+                            options={[{ value: '', label: 'None' }, ...room.acc.packages.map((p) => ({ value: p.id, label: p.name }))]}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Occupancy (names are captured in the Guests step) */}
+                    <div>
+                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Occupancy</p>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-500">Adults</label>
+                          <div className="w-24">
+                            <NumberField value={room.adults.length} onCommit={(n) => setAdultCount(room.key, n)} min={1} max={room.acc.max_occupancy || undefined} />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="mb-1 flex items-center justify-between">
+                            <label className="text-xs font-medium text-slate-500">Children</label>
+                            <Button variant="secondary" onClick={() => addChild(room.key)}><Plus size={14} /> Add child</Button>
+                          </div>
+                          {room.children.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {room.children.map((c, i) => (
+                                <div key={i} className="flex items-center gap-1 rounded-lg border border-slate-100 px-2 py-1">
+                                  <div className="w-16">
+                                    <NumberField value={c.age} onCommit={(n) => setChildAge(room.key, i, n)} min={0} max={17} />
+                                  </div>
+                                  <span className="text-xs text-slate-400">yrs</span>
+                                  <button onClick={() => removeChild(room.key, i)} className="text-slate-400 hover:text-red-600">
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400">No children</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
                   {/* Room price */}
-                  <div className="mt-4 border-t border-slate-100 pt-3 text-sm">
+                  <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 text-sm">
                     {room.quoting ? (
                       <p className="text-slate-400">Calculating...</p>
                     ) : room.error ? (
@@ -686,9 +722,30 @@ export function CreateBookingPage() {
                 ))}
               </div>
 
-              <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 text-base font-bold text-slate-900">
+              {(taxLines.length > 0 || rooms.length > 0) && (
+                <div className="mt-4 space-y-1 border-t border-slate-100 pt-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Subtotal</span>
+                    <span className="font-medium text-slate-800">&#8369;{money(String(grandTotal))}</span>
+                  </div>
+                  {taxLines.map((t, i) => (
+                    <div key={i} className="flex items-start justify-between gap-2">
+                      <span className="text-slate-500">
+                        {t.name}
+                        {t.tax_type === 'percentage' ? ` (${parseFloat(t.rate)}%)` : ''}
+                        {t.is_included ? <span className="text-slate-400"> · incl.</span> : ''}
+                      </span>
+                      <span className={t.is_included ? 'text-slate-400' : 'font-medium text-slate-800'}>
+                        &#8369;{money(t.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-base font-bold text-slate-900">
                 <span>Total</span>
-                <span>&#8369;{money(String(grandTotal))}</span>
+                <span>&#8369;{money(String(finalTotal))}</span>
               </div>
               {!allPriced && rooms.length > 0 && (
                 <p className="mt-2 text-xs text-amber-600">Resolve room pricing before continuing.</p>

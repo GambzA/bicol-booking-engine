@@ -226,7 +226,18 @@ export function BookingDetailPage() {
               <Row label="Subtotal" value={`₱${money(booking.subtotal_amount)}`} />
               {parseFloat(booking.discount_amount) > 0 && <Row label="Discount" value={`- ₱${money(booking.discount_amount)}`} />}
               {parseFloat(booking.package_amount) > 0 && <Row label="Packages" value={`₱${money(booking.package_amount)}`} />}
-              {parseFloat(booking.taxes_fees_amount) > 0 && <Row label="Taxes & fees" value={`₱${money(booking.taxes_fees_amount)}`} />}
+              {booking.taxes.length > 0 && (
+                <>
+                  <Row label="Net subtotal" value={`₱${money(booking.net_amount)}`} />
+                  {booking.taxes.map((t) => (
+                    <Row
+                      key={t.id}
+                      label={`${t.name}${t.tax_type === 'percentage' ? ` (${parseFloat(t.rate)}%)` : ''}${t.is_included ? ' · included' : ''}`}
+                      value={t.is_included ? `(₱${money(t.amount)})` : `₱${money(t.amount)}`}
+                    />
+                  ))}
+                </>
+              )}
               <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 text-base font-bold text-slate-900">
                 <span>Total</span>
                 <span>&#8369;{money(booking.total_amount)}</span>

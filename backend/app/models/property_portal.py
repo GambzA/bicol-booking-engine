@@ -378,6 +378,8 @@ class Booking(TimestampMixin, Base):
     check_in_date: Mapped[date] = mapped_column(Date, nullable=False)
     check_out_date: Mapped[date] = mapped_column(Date, nullable=False)
     num_guests: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    subtotal_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    tax_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
     total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
     status: Mapped[BookingStatus] = mapped_column(
         SQLEnum(BookingStatus, name="bookingstatus", create_type=False, values_callable=lambda x: [e.value for e in x]),
@@ -396,6 +398,10 @@ class Booking(TimestampMixin, Base):
     status_history: Mapped[list["BookingStatusHistory"]] = relationship(
         "BookingStatusHistory", back_populates="booking",
         cascade="all, delete-orphan", order_by="BookingStatusHistory.created_at",
+    )
+    taxes: Mapped[list["BookingTax"]] = relationship(
+        "BookingTax", back_populates="booking",
+        cascade="all, delete-orphan", order_by="BookingTax.display_order",
     )
 
 
@@ -523,3 +529,53 @@ class BookingStatusHistory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     booking: Mapped["Booking"] = relationship("Booking", back_populates="status_history")
+
+
+class Tax(TimestampMixin, Base):
+    """A configurable tax applied to bookings (VAT, service charge, fees, ...).
+
+    ``rate`` holds a percentage value (e.g. 12.00) when ``tax_type`` is
+    'percentage', or a peso amount when 'fixed_amount'. ``calculation_method``
+    is 'inclusive' (extracted from the selling price) or 'exclusive' (added on
+    top). ``application_scope`` controls how many times a fixed amount applies.
+    """
+    __tablename__ = "taxes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tax_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'percentage' | 'fixed_amount'
+    rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    calculation_method: Mapped[str] = mapped_column(String(20), nullable=False)  # 'inclusive' | 'exclusive'
+    application_scope: Mapped[str] = mapped_column(String(20), nullable=False)  # per_booking|per_night|per_guest|per_adult|per_child
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    hotel: Mapped["Hotel"] = relationship("Hotel")
+
+
+class BookingTax(Base):
+    """Immutable per-booking snapshot of one applied tax. Written at create
+    time so later edits to the ``taxes`` config never alter historical bookings.
+    ``is_included`` mirrors an 'inclusive' method: the amount is shown but not
+    added to the booking total."""
+    __tablename__ = "booking_taxes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    tax_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("taxes.id", ondelete="SET NULL"), nullable=True
+    )
+    name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
+    tax_type_snapshot: Mapped[str] = mapped_column(String(20), nullable=False)
+    rate_snapshot: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    calculation_method_snapshot: Mapped[str] = mapped_column(String(20), nullable=False)
+    application_scope_snapshot: Mapped[str] = mapped_column(String(20), nullable=False)
+    calculated_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    is_included: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    booking: Mapped["Booking"] = relationship("Booking", back_populates="taxes")
