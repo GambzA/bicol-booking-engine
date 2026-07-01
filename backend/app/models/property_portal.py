@@ -91,6 +91,7 @@ class AccommodationType(str, enum.Enum):
 
 
 class BookingStatus(str, enum.Enum):
+    PENDING = "pending"
     PENDING_PAYMENT = "pending_payment"
     CONFIRMED = "confirmed"
     CHECKED_IN = "checked_in"
@@ -98,6 +99,16 @@ class BookingStatus(str, enum.Enum):
     CANCELLED = "cancelled"
     REFUNDED = "refunded"
     NO_SHOW = "no_show"
+
+
+class BookingSource(str, enum.Enum):
+    WALK_IN = "walk_in"
+    PHONE = "phone"
+    EMAIL = "email"
+    WEBSITE = "website"
+    FACEBOOK = "facebook"
+    OTA = "ota"
+    MANUAL = "manual"
 
 
 class GuestPaymentStatus(str, enum.Enum):
@@ -136,7 +147,7 @@ class Accommodation(TimestampMixin, Base):
     images: Mapped[Optional[list[Any]]] = mapped_column(JSONB, nullable=True)
 
     hotel: Mapped["Hotel"] = relationship("Hotel")
-    bookings: Mapped[list["Booking"]] = relationship("Booking", back_populates="accommodation")
+    booking_rooms: Mapped[list["BookingRoom"]] = relationship("BookingRoom", back_populates="accommodation")
     child_policies: Mapped[list["AccommodationChildPolicy"]] = relationship(
         "AccommodationChildPolicy", back_populates="accommodation",
         cascade="all, delete-orphan", order_by="AccommodationChildPolicy.sort_order",
@@ -263,6 +274,64 @@ class RatePlanInclusion(Base):
     )
 
 
+class Package(TimestampMixin, Base):
+    __tablename__ = "packages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    pricing_type: Mapped[str] = mapped_column(String(50), nullable=False, server_default="per_stay")
+    price_value: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    hotel: Mapped["Hotel"] = relationship("Hotel")
+    accommodations: Mapped[list["PackageAccommodation"]] = relationship(
+        "PackageAccommodation", back_populates="package", cascade="all, delete-orphan"
+    )
+    inclusions: Mapped[list["PackageInclusion"]] = relationship(
+        "PackageInclusion", back_populates="package", cascade="all, delete-orphan"
+    )
+
+
+class PackageAccommodation(Base):
+    __tablename__ = "package_accommodations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    package_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("packages.id", ondelete="CASCADE"), nullable=False
+    )
+    accommodation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accommodations.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    package: Mapped["Package"] = relationship("Package", back_populates="accommodations")
+    accommodation: Mapped["Accommodation"] = relationship("Accommodation")
+
+    __table_args__ = (
+        UniqueConstraint("package_id", "accommodation_id", name="uq_package_accommodation"),
+    )
+
+
+class PackageInclusion(Base):
+    __tablename__ = "package_inclusions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    package_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("packages.id", ondelete="CASCADE"), nullable=False
+    )
+    inclusion_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    package: Mapped["Package"] = relationship("Package", back_populates="inclusions")
+
+    __table_args__ = (
+        UniqueConstraint("package_id", "inclusion_type", name="uq_package_inclusion"),
+    )
+
+
 class Guest(TimestampMixin, Base):
     __tablename__ = "guests"
 
@@ -294,11 +363,16 @@ class Guest(TimestampMixin, Base):
 
 
 class Booking(TimestampMixin, Base):
+    """Container for one or more rooms sharing a single stay window.
+
+    Per-room accommodation, occupancy, offering, and pricing data live on
+    ``BookingRoom``; this row holds the stay-level fields plus aggregates
+    (``total_amount``, ``num_guests``) summed across its rooms.
+    """
     __tablename__ = "bookings"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
-    accommodation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accommodations.id"), nullable=False)
     guest_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("guests.id"), nullable=False)
     booking_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     check_in_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -310,17 +384,85 @@ class Booking(TimestampMixin, Base):
         nullable=False, server_default="pending_payment",
     )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    booking_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    hotel: Mapped["Hotel"] = relationship("Hotel")
+    guest: Mapped["Guest"] = relationship("Guest", back_populates="bookings")
+    rooms: Mapped[list["BookingRoom"]] = relationship(
+        "BookingRoom", back_populates="booking",
+        cascade="all, delete-orphan", order_by="BookingRoom.display_order",
+    )
+    payments: Mapped[list["GuestPayment"]] = relationship("GuestPayment", back_populates="booking")
+    status_history: Mapped[list["BookingStatusHistory"]] = relationship(
+        "BookingStatusHistory", back_populates="booking",
+        cascade="all, delete-orphan", order_by="BookingStatusHistory.created_at",
+    )
+
+
+class BookingRoom(TimestampMixin, Base):
+    """One room within a booking (= one unit). Holds occupancy, offering
+    selection + snapshots, and the immutable pricing breakdown for that room."""
+    __tablename__ = "booking_rooms"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False)
+    accommodation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accommodations.id"), nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    num_adults: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    num_children: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    num_guests: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+    rate_plan_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("rate_plans.id", ondelete="SET NULL"), nullable=True
+    )
+    rate_plan_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     promotion_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("promotions.id", ondelete="SET NULL"), nullable=True
     )
     promotion_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     discount_type_snapshot: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     discount_value_snapshot: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+    package_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("packages.id", ondelete="SET NULL"), nullable=True
+    )
+    package_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    package_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
 
-    hotel: Mapped["Hotel"] = relationship("Hotel")
-    accommodation: Mapped["Accommodation"] = relationship("Accommodation", back_populates="bookings")
-    guest: Mapped["Guest"] = relationship("Guest", back_populates="bookings")
-    payments: Mapped[list["GuestPayment"]] = relationship("GuestPayment", back_populates="booking")
+    # Pricing breakdown snapshot (room-level)
+    base_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    additional_adult_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    children_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    discount_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    taxes_fees_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    subtotal_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+
+    booking: Mapped["Booking"] = relationship("Booking", back_populates="rooms")
+    accommodation: Mapped["Accommodation"] = relationship("Accommodation", back_populates="booking_rooms")
+    guests: Mapped[list["BookingRoomGuest"]] = relationship(
+        "BookingRoomGuest", back_populates="room",
+        cascade="all, delete-orphan", order_by="BookingRoomGuest.display_order",
+    )
+    nightly_rates: Mapped[list["BookingNightlyRate"]] = relationship(
+        "BookingNightlyRate", back_populates="room",
+        cascade="all, delete-orphan", order_by="BookingNightlyRate.date",
+    )
+
+
+class BookingRoomGuest(Base):
+    """A single occupant of a room. ``full_name`` blank => use the primary guest."""
+    __tablename__ = "booking_room_guests"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booking_room_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("booking_rooms.id", ondelete="CASCADE"), nullable=False
+    )
+    occupant_type: Mapped[str] = mapped_column(String(10), nullable=False)  # 'adult' | 'child'
+    full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    room: Mapped["BookingRoom"] = relationship("BookingRoom", back_populates="guests")
 
 
 class GuestPayment(Base):
@@ -342,3 +484,42 @@ class GuestPayment(Base):
 
     hotel: Mapped["Hotel"] = relationship("Hotel")
     booking: Mapped[Optional["Booking"]] = relationship("Booking", back_populates="payments")
+
+
+class BookingNightlyRate(Base):
+    __tablename__ = "booking_nightly_rates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booking_room_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("booking_rooms.id", ondelete="CASCADE"), nullable=False
+    )
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    room_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    additional_adult_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    children_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    night_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    room: Mapped["BookingRoom"] = relationship("BookingRoom", back_populates="nightly_rates")
+
+    __table_args__ = (
+        UniqueConstraint("booking_room_id", "date", name="uq_booking_room_nightly_rate"),
+    )
+
+
+class BookingStatusHistory(Base):
+    __tablename__ = "booking_status_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    from_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    changed_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    booking: Mapped["Booking"] = relationship("Booking", back_populates="status_history")

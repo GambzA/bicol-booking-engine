@@ -12,10 +12,10 @@ Features are built one at a time in dependency order.
 | 1 | Project Scaffolding | [x] Done | Docker Compose, backend skeleton, frontend skeleton |
 | 2 | Multi-tenancy + Auth | [x] Done | Hotel registration, JWT login/refresh/logout |
 | P | Platform Admin Portal | [x] Done | Full admin backend + frontend (separate auth, all pages) |
-| 3 | Accommodations Management | [ ] Pending | Room types, rooms, pricing |
-| 4 | Booking Engine | [ ] Pending | Availability check, reservations CRUD |
-| 5 | Guest Management | [ ] Pending | Guest profiles, booking history |
-| 6 | Payments | [ ] Pending | Payment recording, receipts |
+| 3 | Accommodations Management | [x] Done | Room types, occupancy pricing, rate calendar, rate plans, promotions, packages |
+| 4 | Booking Engine | [x] Done | Availability search, quote, create/confirm, status lifecycle, historical pricing |
+| 5 | Guest Management | [x] Done | Guest profiles, booking history |
+| 6 | Payments | [~] In Progress | Booking-level payment recording done; standalone payments module pending |
 | 7 | Public Microsite (SEO) | [ ] Pending | Per-hotel public page, Lenis scroll |
 | 8 | Reports / Export | [ ] Pending | Occupancy, revenue, openpyxl export |
 
@@ -44,6 +44,23 @@ Features are built one at a time in dependency order.
 ### Guest Management (property portal)
 - Expanded guest model: address_line_1, address_line_2, city, state_province, postal_code, country_id FK -> references.countries
 - GuestForm.tsx rewritten with FormLayout + RHF + Zod + CountrySelect + ProvinceSelect
+
+### Packages (property portal)
+- `packages` + `package_accommodations` + `package_inclusions` tables (migration 0020), mirroring the rate-plan structure
+- Pricing types: `per_stay` (flat), `per_night` (x nights), `per_person` (x total guests)
+- Backend: `app/api/v1/property/packages.py` (CRUD + toggle); Frontend: PackagesPage / PackageForm / Create / Edit; nav item + routes; `PACKAGE_PRICING_TYPES`, `PACKAGE_INCLUSIONS` constants
+
+### Multi-Room Bookings (property portal)
+- Schema (migration 0022): promoted `bookings` to a container. Per-room accommodation, occupancy, offering refs + snapshots, and the pricing breakdown moved to a new `booking_rooms` table; occupant names/ages to `booking_room_guests` (occupant_type adult/child, `full_name` blank => primary guest); `booking_nightly_rates` repointed from `booking_id` to `booking_room_id`. Existing single-room bookings migrated into one room each. `bookings` keeps only stay-level fields + aggregates (`total_amount`, `num_guests`).
+- All rooms in a booking share one stay window (single check-in/check-out). `count_available_units` now counts overlapping `booking_rooms` (each room = one unit) joined to their booking; create validates rooms-per-accommodation <= free units.
+- Backend `bookings.py`: `POST` create takes `rooms: [{accommodation_id, rate_plan/promo/package, adults:[{full_name}], children:[{age, full_name}]}]`, prices each room via `compute_quote`, writes `BookingRoom` + `BookingRoomGuest` + per-room nightly rates, sets `total_amount`/`num_guests` from the sum. Detail returns `rooms[]` (each with breakdown, nightly rates, resolved occupant names) + stay-level aggregates; list returns `accommodation_summary` ("Deluxe +1") + `rooms_count`. `availability-search`/`quote` unchanged (per-accommodation; the wizard quotes each room live).
+- Frontend: `CreateBookingPage` rebuilt as a 3-step wizard: (1) Rooms = stay dates + room cart (add rooms, rate plan/promo/package, per-room occupancy counts/ages) on one page, changing dates re-prices cart rooms and forces a re-search; (2) Guests = primary guest select/create, then a per-room occupant-name manifest (blank => primary guest); (3) Confirm = source/notes/save. A sticky right-side summary panel (dates, per-room totals, grand total) is always visible so the two-column layout never reflows. `BookingDetailPage` renders one card per room + a Charges card; `BookingsPage` shows the accommodation summary + room count.
+
+### Booking Management (property portal)
+- Schema (migration 0021): booking snapshot columns (source, num_adults/children, rate_plan/package refs + name snapshots, per-line breakdown amounts), `booking_nightly_rates` (immutable nightly snapshot), `booking_status_history` (timeline). Added `pending` to the `bookingstatus` enum (additive). Superseded by migration 0022 (per-room columns moved off `bookings`).
+- Pricing engine `app/services/pricing.py` — single source of truth shared by availability search, live quote, and confirm. Per-night build-up: room rate (override -> weekend -> base) -> rate-plan adjustment -> additional-adult charge -> child-policy charges; stay-level: promotion discount -> package amount -> taxes/fees (0). Also `count_available_units` (honors unit blocks + active bookings) and occupancy validation (0/None caps treated as "not configured").
+- Backend `app/api/v1/property/bookings.py`: `POST availability-search`, `POST quote`, `GET` list (search/status/payment/date filters + sort), `GET {id}` detail, `POST` create+confirm (re-quotes server-side, generates `BK-YYYYMMDD-XXXX`, writes nightly snapshot + initial timeline entry), `PATCH {id}/status` (timeline, no re-pricing), `POST {id}/payments` (records to guest_payments), `DELETE` soft-delete. Payment status (unpaid/partially_paid/paid) is derived from paid payments vs total.
+- Frontend: BookingsPage (list), BookingDetailPage (summary, nightly breakdown, status management, timeline, payment summary + record payment), CreateBookingPage (4-step wizard: search -> select rate plan/promo/package with live quote -> select/create guest -> confirm). `bookings.ts` client, `BookingBadges` (status + payment pills), `BOOKING_STATUSES` / `BOOKING_PAYMENT_STATUSES` / `BOOKING_SOURCES` / `PAYMENT_METHODS` constants.
 
 ---
 
@@ -154,3 +171,10 @@ docker compose exec backend alembic upgrade head
 | 2026-06-30 | Replace curated geo seed with full dr5hn dataset (250 countries / 5,249 states / 152,967 cities) via migration 0019 | Curated 337-city set was too sparse; dr5hn maps 1:1 to the 3-table schema and ships lat/lon/timezone. CSVs vendored gzipped (~5MB) and loaded with batched inserts under asyncpg |
 | 2026-06-30 | Countries topped-up (ON CONFLICT DO NOTHING), states + cities wiped and reloaded | Existing country UUIDs are referenced by `guests.country_id`; states/cities have no external FKs (`guests.state_province`/`city` are strings), so they can be safely rebuilt |
 | 2026-06-30 | Dropped 0017 partial unique indexes on cities; added `pg_trgm` GIN index | Full dataset has 324 legitimate duplicate (state, name) localities; uniqueness no longer holds. Trigram index keeps `LIKE '%q%'` city search sub-ms at 150k rows |
+| 2026-07-01 | Built a minimal Packages module before Bookings | Spec references packages in the booking flow but no Packages module existed; built CRUD + pricing (per_stay/per_night/per_person) mirroring rate plans so bookings can bundle add-ons |
+| 2026-07-01 | Single shared pricing engine (`services/pricing.py`) for search, quote, and confirm | Guarantees the estimate, live recalc, and stored snapshot are computed identically; server always re-quotes on confirm and never trusts client totals |
+| 2026-07-01 | Historical pricing stored as `booking_nightly_rates` (per-night) + stay-level snapshot columns on `bookings` | Normalized nightly breakdown for the summary/audit; confirmed bookings are immune to later rate-calendar/rate-plan/promotion/package changes |
+| 2026-07-01 | Booking payment status derived (not stored); `pending` added to enum additively | Deriving unpaid/partially_paid/paid from paid payments vs total avoids sync drift; additive enum change preserves existing `pending_payment`/`refunded` values |
+| 2026-07-01 | Occupancy caps of 0/None treated as "not configured" | Accommodation form stores 0 for blank max_adults/max_children; enforcing a literal 0 would reject every booking, so caps apply only when a positive limit is set |
+| 2026-07-01 | Multi-room bookings via `booking_rooms` child table; per-room columns dropped from `bookings` | A booking can hold several rooms sharing one stay; normalizing per-room data (accommodation, occupancy, offerings, pricing snapshot) into `booking_rooms` keeps `bookings` a clean container. `bookings.total_amount`/`num_guests` retained as aggregates so the list's payment-status subquery avoids joining rooms |
+| 2026-07-01 | Per-occupant names in `booking_room_guests` (adult/child rows), blank => primary guest | Vivian wanted a name for every occupant, not just a room label; a normalized child table (vs a JSON manifest) fits the "avoid json / normalized" rule, and child rows carry the age that drives pricing |

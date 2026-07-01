@@ -32,6 +32,12 @@ import { EditRatePlanPage } from './pages/property/rate-plans/EditRatePlanPage'
 import { PromotionsPage } from './pages/property/promotions/PromotionsPage'
 import { CreatePromotionPage } from './pages/property/promotions/CreatePromotionPage'
 import { EditPromotionPage } from './pages/property/promotions/EditPromotionPage'
+import { PackagesPage } from './pages/property/packages/PackagesPage'
+import { CreatePackagePage } from './pages/property/packages/CreatePackagePage'
+import { EditPackagePage } from './pages/property/packages/EditPackagePage'
+import { BookingsPage } from './pages/property/bookings/BookingsPage'
+import { CreateBookingPage } from './pages/property/bookings/CreateBookingPage'
+import { BookingDetailPage } from './pages/property/bookings/BookingDetailPage'
 import { GuestsPage } from './pages/property/guests/GuestsPage'
 import { CreateGuestPage } from './pages/property/guests/CreateGuestPage'
 import { EditGuestPage } from './pages/property/guests/EditGuestPage'
@@ -81,6 +87,12 @@ export default function App() {
           <Route path="/promotions" element={<PromotionsPage />} />
           <Route path="/promotions/new" element={<CreatePromotionPage />} />
           <Route path="/promotions/:id/edit" element={<EditPromotionPage />} />
+          <Route path="/packages" element={<PackagesPage />} />
+          <Route path="/packages/new" element={<CreatePackagePage />} />
+          <Route path="/packages/:id/edit" element={<EditPackagePage />} />
+          <Route path="/bookings" element={<BookingsPage />} />
+          <Route path="/bookings/new" element={<CreateBookingPage />} />
+          <Route path="/bookings/:id" element={<BookingDetailPage />} />
           <Route path="/guests" element={<GuestsPage />} />
           <Route path="/guests/new" element={<CreateGuestPage />} />
           <Route path="/guests/:id" element={<GuestProfilePage />} />

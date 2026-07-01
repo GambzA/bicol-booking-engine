@@ -7,7 +7,9 @@ from app.models.billing import InvoiceType, InvoiceStatus, PeriodType, Commissio
 from app.models.audit_log import AuditLog
 from app.models.property_portal import (
     Accommodation, AccommodationChildPolicy, Guest, Booking, GuestPayment,
-    AccommodationType, BookingStatus, GuestPaymentStatus,
+    AccommodationType, BookingStatus, BookingSource, GuestPaymentStatus,
+    Package, PackageAccommodation, PackageInclusion,
+    BookingRoom, BookingRoomGuest, BookingNightlyRate, BookingStatusHistory,
 )
 from app.models.reference import ReferenceCountry, ReferenceStateProvince, ReferenceCity
 
@@ -20,6 +22,8 @@ __all__ = [
     "InvoiceType", "InvoiceStatus", "PeriodType", "CommissionStatementStatus",
     "AuditLog",
     "Accommodation", "AccommodationChildPolicy", "Guest", "Booking", "GuestPayment",
-    "AccommodationType", "BookingStatus", "GuestPaymentStatus",
+    "AccommodationType", "BookingStatus", "BookingSource", "GuestPaymentStatus",
+    "Package", "PackageAccommodation", "PackageInclusion",
+    "BookingRoom", "BookingRoomGuest", "BookingNightlyRate", "BookingStatusHistory",
     "ReferenceCountry", "ReferenceStateProvince", "ReferenceCity",
 ]

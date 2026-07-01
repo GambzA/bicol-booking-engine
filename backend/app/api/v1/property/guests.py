@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.models.property_portal import Guest, Booking, Accommodation
+from app.models.property_portal import Guest, Booking, BookingRoom, Accommodation
 from app.models.reference import ReferenceCountry
 
 router = APIRouter(prefix="/guests", tags=["property-guests"])
@@ -49,10 +49,14 @@ class GuestUpdate(BaseModel):
 
 
 def _serialize_booking(booking: Booking) -> dict:
+    rooms = list(booking.rooms)
+    first = rooms[0].accommodation.name if rooms and rooms[0].accommodation else None
+    summary = f"{first} +{len(rooms) - 1}" if first and len(rooms) > 1 else first
     return {
         "id": str(booking.id),
         "booking_number": booking.booking_number,
-        "accommodation_name": booking.accommodation.name if booking.accommodation else None,
+        "accommodation_name": summary,
+        "rooms_count": len(rooms),
         "check_in_date": booking.check_in_date.isoformat(),
         "check_out_date": booking.check_out_date.isoformat(),
         "status": booking.status.value if hasattr(booking.status, "value") else booking.status,
@@ -231,7 +235,7 @@ async def get_guest(
             Guest.deleted_at.is_(None),
         )
         .options(
-            selectinload(Guest.bookings).joinedload(Booking.accommodation),
+            selectinload(Guest.bookings).selectinload(Booking.rooms).joinedload(BookingRoom.accommodation),
             joinedload(Guest.country),
         )
     )).scalar_one_or_none()

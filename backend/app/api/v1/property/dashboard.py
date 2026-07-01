@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -8,10 +9,18 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.property_portal import (
-    Accommodation, Booking, BookingStatus, GuestPayment, GuestPaymentStatus,
+    Accommodation, Booking, BookingRoom, BookingStatus, GuestPayment, GuestPaymentStatus,
 )
 
 router = APIRouter(prefix="/dashboard", tags=["property-dashboard"])
+
+
+def _accommodation_summary(booking: Booking) -> Optional[str]:
+    rooms = list(booking.rooms)
+    if not rooms or not rooms[0].accommodation:
+        return None
+    first = rooms[0].accommodation.name
+    return f"{first} +{len(rooms) - 1}" if len(rooms) > 1 else first
 
 
 @router.get("")
@@ -109,7 +118,10 @@ async def get_dashboard(
 
     recent_rows = list((await db.execute(
         select(Booking)
-        .options(selectinload(Booking.guest), selectinload(Booking.accommodation))
+        .options(
+            selectinload(Booking.guest),
+            selectinload(Booking.rooms).joinedload(BookingRoom.accommodation),
+        )
         .where(Booking.hotel_id == hotel_id, Booking.deleted_at.is_(None))
         .order_by(Booking.created_at.desc())
         .limit(10)
@@ -129,7 +141,7 @@ async def get_dashboard(
                 "id": str(b.id),
                 "booking_number": b.booking_number,
                 "guest_name": b.guest.full_name,
-                "accommodation_name": b.accommodation.name,
+                "accommodation_name": _accommodation_summary(b),
                 "check_in_date": str(b.check_in_date),
                 "check_out_date": str(b.check_out_date),
                 "total_amount": str(b.total_amount),

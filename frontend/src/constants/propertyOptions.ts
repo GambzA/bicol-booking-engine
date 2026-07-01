@@ -122,9 +122,60 @@ export const CHILD_CHARGE_TYPES = [
   { value: 'percentage_of_base_rate', label: '% of Base Rate' },
 ]
 
+export const PACKAGE_PRICING_TYPES = [
+  { value: 'per_stay', label: 'Per Stay', description: 'Flat amount added once to the booking' },
+  { value: 'per_night', label: 'Per Night', description: 'Amount multiplied by the number of nights' },
+  { value: 'per_person', label: 'Per Person', description: 'Amount multiplied by the total number of guests' },
+]
+
+export const PACKAGE_INCLUSIONS = [
+  { value: 'breakfast', label: 'Breakfast' },
+  { value: 'lunch', label: 'Lunch' },
+  { value: 'dinner', label: 'Dinner' },
+  { value: 'airport_transfer', label: 'Airport Transfer' },
+  { value: 'spa_access', label: 'Spa Access' },
+  { value: 'island_tour', label: 'Island Tour' },
+  { value: 'welcome_drink', label: 'Welcome Drink' },
+  { value: 'late_checkout', label: 'Late Checkout' },
+]
+
 export const PROMOTION_DISCOUNT_TYPES = [
   { value: 'percentage', label: 'Percentage Discount', description: 'Deduct a percentage from the booking price' },
   { value: 'fixed_amount', label: 'Fixed Amount Discount', description: 'Deduct a fixed amount from the booking price' },
+]
+
+export const BOOKING_STATUSES = [
+  { value: 'pending', label: 'Pending', color: 'amber' },
+  { value: 'confirmed', label: 'Confirmed', color: 'emerald' },
+  { value: 'checked_in', label: 'Checked In', color: 'blue' },
+  { value: 'checked_out', label: 'Checked Out', color: 'slate' },
+  { value: 'cancelled', label: 'Cancelled', color: 'red' },
+  { value: 'no_show', label: 'No Show', color: 'red' },
+]
+
+export const BOOKING_PAYMENT_STATUSES = [
+  { value: 'unpaid', label: 'Unpaid', color: 'red' },
+  { value: 'partially_paid', label: 'Partially Paid', color: 'amber' },
+  { value: 'paid', label: 'Paid', color: 'emerald' },
+]
+
+export const BOOKING_SOURCES = [
+  { value: 'walk_in', label: 'Walk-in' },
+  { value: 'phone', label: 'Phone' },
+  { value: 'email', label: 'Email' },
+  { value: 'website', label: 'Website' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'ota', label: 'OTA' },
+  { value: 'manual', label: 'Manual' },
+]
+
+export const PAYMENT_METHODS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'card', label: 'Credit/Debit Card' },
+  { value: 'bank_transfer', label: 'Bank Transfer' },
+  { value: 'gcash', label: 'GCash' },
+  { value: 'maya', label: 'Maya' },
+  { value: 'other', label: 'Other' },
 ]
 
 export const LANGUAGES = [

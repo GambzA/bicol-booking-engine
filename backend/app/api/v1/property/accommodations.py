@@ -12,7 +12,7 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.property_portal import (
     Accommodation, AccommodationChildPolicy, AccommodationType,
-    AccommodationUnitAvailability, AccommodationRateOverride, Booking, BookingStatus,
+    AccommodationUnitAvailability, AccommodationRateOverride, Booking, BookingRoom, BookingStatus,
 )
 
 router = APIRouter(prefix="/accommodations", tags=["property-accommodations"])
@@ -197,12 +197,15 @@ async def get_availability(
         .order_by(Accommodation.name)
     )).scalars().all())
 
+    # Each booked room occupies one unit of its accommodation.
     bookings = list((await db.execute(
-        select(Booking.accommodation_id, Booking.check_in_date, Booking.check_out_date)
+        select(BookingRoom.accommodation_id, Booking.check_in_date, Booking.check_out_date)
+        .join(Booking, BookingRoom.booking_id == Booking.id)
         .where(
             Booking.hotel_id == hotel_id,
             Booking.deleted_at.is_(None),
             Booking.status.in_([
+                BookingStatus.PENDING,
                 BookingStatus.PENDING_PAYMENT,
                 BookingStatus.CONFIRMED,
                 BookingStatus.CHECKED_IN,
