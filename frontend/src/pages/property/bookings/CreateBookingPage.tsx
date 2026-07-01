@@ -527,7 +527,7 @@ export function CreateBookingPage() {
                           {room.children.length > 0 ? (
                             <div className="flex flex-wrap gap-2">
                               {room.children.map((c, i) => (
-                                <div key={i} className="flex items-center gap-1 rounded-lg border border-slate-100 px-2 py-1">
+                                <div key={i} className="flex items-center gap-1 rounded-lg border border-slate-100 px-2 py-1 bg-gray-50">
                                   <div className="w-16">
                                     <NumberField value={c.age} onCommit={(n) => setChildAge(room.key, i, n)} min={0} max={17} />
                                   </div>
