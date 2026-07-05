@@ -174,6 +174,18 @@ export interface BookingTaxLine {
   is_included: boolean
 }
 
+export interface BookingBillableItemLine {
+  id: string
+  billable_item_id: string | null
+  name: string
+  category: string
+  pricing_type: string
+  unit_price: string
+  quantity: number
+  is_taxable: boolean
+  amount: string
+}
+
 export interface BookingDetail {
   id: string
   booking_number: string
@@ -204,6 +216,8 @@ export interface BookingDetail {
   net_amount: string
   tax_total: string
   taxes: BookingTaxLine[]
+  billable_items_amount: string
+  billable_items: BookingBillableItemLine[]
   total_amount: string
   payment_summary: PaymentSummary
   timeline: TimelineEntry[]
@@ -224,6 +238,11 @@ export interface RoomInput {
   package_id?: string | null
   adults: OccupantInput[]
   children: OccupantInput[]
+}
+
+export interface BillableItemInput {
+  billable_item_id: string
+  quantity?: number | null
 }
 
 const BASE = '/api/v1/property/bookings'
@@ -269,7 +288,11 @@ export const bookingsApi = {
     status?: string
     payment_method_id?: string | null
     rooms: RoomInput[]
+    billable_items?: BillableItemInput[]
   }) => api.post<BookingDetail>(BASE, data),
+
+  addBillableItem: (id: string, data: BillableItemInput) =>
+    api.post<BookingDetail>(`${BASE}/${id}/billable-items`, data),
 
   updateStatus: (id: string, data: { status: string; note?: string | null }) =>
     api.patch<BookingDetail>(`${BASE}/${id}/status`, data),

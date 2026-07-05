@@ -3,9 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Plus } from 'lucide-react'
 import { bookingsApi, type BookingDetail, type BookingRoom } from '../../../api/property/bookings'
 import { paymentMethodsApi, type PaymentMethod } from '../../../api/property/paymentMethods'
+import { billableItemsApi, type BillableItem } from '../../../api/property/billableItems'
 import {
   BOOKING_STATUSES, BOOKING_SOURCES, PAYMENT_METHODS, ACCOMMODATION_TYPES,
   PAYMENT_RECORD_STATUSES, TRANSACTION_TYPE_LABELS,
+  BILLABLE_ITEM_CATEGORIES, QUANTITY_INPUT_PRICING_TYPES,
 } from '../../../constants/propertyOptions'
 import { Button } from '../../../components/common/Button'
 import { Input } from '../../../components/common/Input'
@@ -17,6 +19,7 @@ import { BookingStatusBadge, PaymentStatusBadge, PaymentRecordBadge } from '../.
 const ASSIGNABLE = BOOKING_STATUSES.map((s) => ({ value: s.value, label: s.label }))
 const SOURCE_LABELS: Record<string, string> = Object.fromEntries(BOOKING_SOURCES.map((s) => [s.value, s.label]))
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(ACCOMMODATION_TYPES.map((t) => [t.value, t.label]))
+const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(BILLABLE_ITEM_CATEGORIES.map((c) => [c.value, c.label]))
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-PH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })
@@ -145,6 +148,25 @@ export function BookingDetailPage() {
       .catch(() => {})
   }, [])
 
+  const [itemOpen, setItemOpen] = useState(false)
+  const [eligibleItems, setEligibleItems] = useState<BillableItem[]>([])
+  const [addItemId, setAddItemId] = useState('')
+  const [addItemQty, setAddItemQty] = useState('1')
+  const [savingItem, setSavingItem] = useState(false)
+
+  useEffect(() => {
+    if (!booking || booking.rooms.length === 0) return
+    billableItemsApi
+      .listEligible({
+        accommodation_ids: [...new Set(booking.rooms.map((r) => r.accommodation_id))],
+        rate_plan_ids: [...new Set(booking.rooms.map((r) => r.rate_plan_id).filter((x): x is string => !!x))],
+        stage: 'all',
+      })
+      .then((r) => setEligibleItems(r.data.items))
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booking?.id])
+
   const handleStatusUpdate = async () => {
     if (!id || !booking || newStatus === booking.status) return
     setSavingStatus(true)
@@ -182,6 +204,26 @@ export function BookingDetailPage() {
       toast.error(detail ?? 'Failed to record payment.')
     }
     setSavingPay(false)
+  }
+
+  const handleAddItem = async () => {
+    if (!id || !addItemId) return
+    const item = eligibleItems.find((i) => i.id === addItemId)
+    const qty = parseInt(addItemQty, 10)
+    setSavingItem(true)
+    try {
+      const r = await bookingsApi.addBillableItem(id, {
+        billable_item_id: addItemId,
+        quantity: item && QUANTITY_INPUT_PRICING_TYPES.includes(item.pricing_type) ? (isNaN(qty) ? 1 : qty) : null,
+      })
+      setBooking(r.data)
+      setItemOpen(false); setAddItemId(''); setAddItemQty('1')
+      toast.success('Item added.')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(typeof detail === 'string' ? detail : 'Failed to add item.')
+    }
+    setSavingItem(false)
   }
 
   if (loading) return <PageLoader />
@@ -230,6 +272,59 @@ export function BookingDetailPage() {
               <RoomCard key={room.id} room={room} index={i} />
             ))}
 
+            <Card
+              title="Billable Items"
+              action={
+                <button onClick={() => setItemOpen((o) => !o)} className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900">
+                  <Plus size={14} /> Add
+                </button>
+              }
+            >
+              {booking.billable_items.length === 0 ? (
+                <p className="text-sm text-slate-400">No billable items added yet.</p>
+              ) : (
+                <div className="space-y-1">
+                  {booking.billable_items.map((line) => (
+                    <div key={line.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
+                      <div>
+                        <span className="text-slate-700">{line.name}</span>
+                        <span className="ml-2 text-xs text-slate-400">
+                          {CATEGORY_LABELS[line.category] ?? line.category}
+                          {QUANTITY_INPUT_PRICING_TYPES.includes(line.pricing_type) ? ` · ×${line.quantity}` : ''}
+                          {!line.is_taxable ? ' · non-taxable' : ''}
+                        </span>
+                      </div>
+                      <span className="whitespace-nowrap font-medium text-slate-800">₱{money(line.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="mt-1 flex justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-900">
+                    <span>Total</span>
+                    <span>₱{money(booking.billable_items_amount)}</span>
+                  </div>
+                </div>
+              )}
+
+              {itemOpen && (
+                <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                  <Select
+                    options={[
+                      { value: '', label: eligibleItems.length ? 'Select an item...' : 'No eligible items' },
+                      ...eligibleItems.map((i) => ({ value: i.id, label: i.name })),
+                    ]}
+                    value={addItemId}
+                    onChange={(e) => setAddItemId(e.target.value)}
+                  />
+                  {(() => {
+                    const sel = eligibleItems.find((i) => i.id === addItemId)
+                    return sel && QUANTITY_INPUT_PRICING_TYPES.includes(sel.pricing_type) ? (
+                      <Input type="number" min="1" step="1" placeholder="Quantity" value={addItemQty} onChange={(e) => setAddItemQty(e.target.value)} />
+                    ) : null
+                  })()}
+                  <Button className="w-full" onClick={handleAddItem} loading={savingItem} disabled={!addItemId}>Add Item</Button>
+                </div>
+              )}
+            </Card>
+
             <Card title="Charges">
               <Row label="Base (rooms)" value={`₱${money(booking.base_amount)}`} />
               {parseFloat(booking.additional_adult_amount) > 0 && <Row label="Additional adult charges" value={`₱${money(booking.additional_adult_amount)}`} />}
@@ -237,6 +332,7 @@ export function BookingDetailPage() {
               <Row label="Subtotal" value={`₱${money(booking.subtotal_amount)}`} />
               {parseFloat(booking.discount_amount) > 0 && <Row label="Discount" value={`- ₱${money(booking.discount_amount)}`} />}
               {parseFloat(booking.package_amount) > 0 && <Row label="Packages" value={`₱${money(booking.package_amount)}`} />}
+              {parseFloat(booking.billable_items_amount) > 0 && <Row label="Billable items" value={`₱${money(booking.billable_items_amount)}`} />}
               {booking.taxes.length > 0 && (
                 <>
                   <Row label="Net subtotal" value={`₱${money(booking.net_amount)}`} />

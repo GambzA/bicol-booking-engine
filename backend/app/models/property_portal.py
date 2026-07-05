@@ -381,6 +381,7 @@ class Booking(TimestampMixin, Base):
     check_out_date: Mapped[date] = mapped_column(Date, nullable=False)
     num_guests: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     subtotal_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    billable_items_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
     tax_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
     total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
     status: Mapped[BookingStatus] = mapped_column(
@@ -411,6 +412,10 @@ class Booking(TimestampMixin, Base):
     taxes: Mapped[list["BookingTax"]] = relationship(
         "BookingTax", back_populates="booking",
         cascade="all, delete-orphan", order_by="BookingTax.display_order",
+    )
+    billable_items: Mapped[list["BookingBillableItem"]] = relationship(
+        "BookingBillableItem", back_populates="booking",
+        cascade="all, delete-orphan", order_by="BookingBillableItem.display_order",
     )
 
 
@@ -669,3 +674,101 @@ class PaymentTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     record: Mapped["PaymentRecord"] = relationship("PaymentRecord", back_populates="transactions")
+
+
+class BillableItem(TimestampMixin, Base):
+    """A guest-selectable charge (minibar, late checkout, spa, fees, ...) not
+    part of the room rate. Booking-level, not per-room: pricing types key off
+    booking-wide totals (nights, guest counts) or a user-entered quantity."""
+    __tablename__ = "billable_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    pricing_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    is_taxable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    applies_to_all_accommodations: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    applies_to_all_rate_plans: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    available_at_booking: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    available_at_checkin: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    available_at_stay: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    available_at_checkout: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+
+    hotel: Mapped["Hotel"] = relationship("Hotel")
+    accommodation_links: Mapped[list["BillableItemAccommodation"]] = relationship(
+        "BillableItemAccommodation", back_populates="billable_item", cascade="all, delete-orphan"
+    )
+    rate_plan_links: Mapped[list["BillableItemRatePlan"]] = relationship(
+        "BillableItemRatePlan", back_populates="billable_item", cascade="all, delete-orphan"
+    )
+
+
+class BillableItemAccommodation(Base):
+    __tablename__ = "billable_item_accommodations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    billable_item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("billable_items.id", ondelete="CASCADE"), nullable=False
+    )
+    accommodation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accommodations.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    billable_item: Mapped["BillableItem"] = relationship("BillableItem", back_populates="accommodation_links")
+    accommodation: Mapped["Accommodation"] = relationship("Accommodation")
+
+    __table_args__ = (
+        UniqueConstraint("billable_item_id", "accommodation_id", name="uq_billable_item_accommodation"),
+    )
+
+
+class BillableItemRatePlan(Base):
+    __tablename__ = "billable_item_rate_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    billable_item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("billable_items.id", ondelete="CASCADE"), nullable=False
+    )
+    rate_plan_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("rate_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    billable_item: Mapped["BillableItem"] = relationship("BillableItem", back_populates="rate_plan_links")
+    rate_plan: Mapped["RatePlan"] = relationship("RatePlan")
+
+    __table_args__ = (
+        UniqueConstraint("billable_item_id", "rate_plan_id", name="uq_billable_item_rate_plan"),
+    )
+
+
+class BookingBillableItem(Base):
+    """Immutable per-booking snapshot of one billable item line. Written at
+    create time (or when added post-confirmation) so later edits to the
+    ``billable_items`` config never alter historical bookings."""
+    __tablename__ = "booking_billable_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    billable_item_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("billable_items.id", ondelete="SET NULL"), nullable=True
+    )
+    name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
+    category_snapshot: Mapped[str] = mapped_column(String(50), nullable=False)
+    pricing_type_snapshot: Mapped[str] = mapped_column(String(30), nullable=False)
+    unit_price_snapshot: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    is_taxable_snapshot: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    calculated_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    booking: Mapped["Booking"] = relationship("Booking", back_populates="billable_items")

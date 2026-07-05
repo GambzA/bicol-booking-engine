@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, BedDouble, BookOpen, Users, CreditCard,
   Settings, BarChart3, LogOut, UserCog,
-  ChevronRight, List, CalendarDays, Tag, DollarSign, Percent, Gift, Receipt,
+  ChevronRight, List, CalendarDays, Tag, DollarSign, Percent, Gift, Receipt, ShoppingBag,
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { authApi } from '../../api/auth'
@@ -13,6 +13,7 @@ const NAV = [
   { to: '/rate-plans', label: 'Rate Plans', icon: DollarSign },
   { to: '/promotions', label: 'Promotions', icon: Percent },
   { to: '/packages', label: 'Packages', icon: Gift },
+  { to: '/billable-items', label: 'Billable Items', icon: ShoppingBag },
   { to: '/bookings', label: 'Bookings', icon: BookOpen },
   { to: '/guests', label: 'Guests', icon: Users },
   { to: '/payments', label: 'Payments', icon: CreditCard },

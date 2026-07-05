@@ -35,6 +35,9 @@ import { EditPromotionPage } from './pages/property/promotions/EditPromotionPage
 import { PackagesPage } from './pages/property/packages/PackagesPage'
 import { CreatePackagePage } from './pages/property/packages/CreatePackagePage'
 import { EditPackagePage } from './pages/property/packages/EditPackagePage'
+import { BillableItemsPage } from './pages/property/billable-items/BillableItemsPage'
+import { CreateBillableItemPage } from './pages/property/billable-items/CreateBillableItemPage'
+import { EditBillableItemPage } from './pages/property/billable-items/EditBillableItemPage'
 import { SettingsPage } from './pages/property/settings/SettingsPage'
 import { TaxesPage } from './pages/property/settings/taxes/TaxesPage'
 import { CreateTaxPage } from './pages/property/settings/taxes/CreateTaxPage'
@@ -97,6 +100,9 @@ export default function App() {
           <Route path="/packages" element={<PackagesPage />} />
           <Route path="/packages/new" element={<CreatePackagePage />} />
           <Route path="/packages/:id/edit" element={<EditPackagePage />} />
+          <Route path="/billable-items" element={<BillableItemsPage />} />
+          <Route path="/billable-items/new" element={<CreateBillableItemPage />} />
+          <Route path="/billable-items/:id/edit" element={<EditBillableItemPage />} />
           <Route path="/bookings" element={<BookingsPage />} />
           <Route path="/bookings/new" element={<CreateBookingPage />} />
           <Route path="/bookings/:id" element={<BookingDetailPage />} />

@@ -230,6 +230,29 @@ export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   webhook_received: 'Webhook Received',
 }
 
+export const BILLABLE_ITEM_CATEGORIES = [
+  { value: 'food_beverage', label: 'Food & Beverage' },
+  { value: 'transportation', label: 'Transportation' },
+  { value: 'accommodation_services', label: 'Accommodation Services' },
+  { value: 'wellness', label: 'Wellness' },
+  { value: 'housekeeping', label: 'Housekeeping' },
+  { value: 'equipment_rental', label: 'Equipment Rental' },
+  { value: 'fees_penalties', label: 'Fees & Penalties' },
+  { value: 'miscellaneous', label: 'Miscellaneous' },
+]
+
+export const BILLABLE_ITEM_PRICING_TYPES = [
+  { value: 'fixed_amount', label: 'Fixed Amount', description: 'A flat charge; quantity is up to you' },
+  { value: 'per_night', label: 'Per Night', description: 'Multiplied by the number of nights' },
+  { value: 'per_guest', label: 'Per Guest', description: 'Multiplied by the total number of guests' },
+  { value: 'per_adult', label: 'Per Adult', description: 'Multiplied by the number of adults' },
+  { value: 'per_child', label: 'Per Child', description: 'Multiplied by the number of children' },
+  { value: 'per_quantity', label: 'Per Quantity', description: 'Multiplied by a quantity you specify' },
+  { value: 'percentage_of_booking', label: 'Percentage of Booking', description: 'A percentage of the booking subtotal' },
+]
+
+export const QUANTITY_INPUT_PRICING_TYPES = ['fixed_amount', 'per_quantity']
+
 export const LANGUAGES = [
   { value: 'en', label: 'English' },
   { value: 'fil', label: 'Filipino' },

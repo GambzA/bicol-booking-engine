@@ -15,7 +15,7 @@ from app.models.user import User
 from app.models.property_portal import (
     Accommodation, Guest, Booking, BookingRoom, BookingRoomGuest, BookingStatus, BookingSource,
     BookingNightlyRate, BookingStatusHistory, BookingTax, PaymentRecord, PaymentRecordStatus,
-    PaymentTransaction, PaymentMethod,
+    PaymentTransaction, PaymentMethod, BillableItem, BookingBillableItem,
     RatePlan, RatePlanAccommodation, Promotion, PromotionAccommodation, PromotionRatePlan,
     Package, PackageAccommodation,
 )
@@ -24,6 +24,10 @@ from app.services.pricing import (
     money, PricingError, Quote, ACTIVE_BOOKING_STATUSES,
 )
 from app.services.taxes import compute_taxes, added_tax_total, load_active_taxes
+from app.services.billable_items import (
+    compute_billable_item_line, load_eligible_items, taxable_total as billable_taxable_total,
+    grand_total_of as billable_grand_total,
+)
 
 router = APIRouter(prefix="/bookings", tags=["property-bookings"])
 
@@ -70,6 +74,11 @@ class RoomInput(BaseModel):
     children: list[OccupantInput] = []
 
 
+class BillableItemInput(BaseModel):
+    billable_item_id: uuid.UUID
+    quantity: Optional[int] = None  # only meaningful for fixed_amount / per_quantity types
+
+
 class BookingCreate(BaseModel):
     guest_id: uuid.UUID
     check_in_date: date
@@ -79,6 +88,7 @@ class BookingCreate(BaseModel):
     status: str = "confirmed"  # "pending" or "confirmed"
     payment_method_id: Optional[uuid.UUID] = None
     rooms: list[RoomInput] = Field(min_length=1)
+    billable_items: list[BillableItemInput] = []
 
 
 class StatusUpdateBody(BaseModel):
@@ -189,6 +199,7 @@ def _detail_options():
         selectinload(Booking.status_history),
         selectinload(Booking.payments).selectinload(PaymentRecord.transactions),
         selectinload(Booking.taxes),
+        selectinload(Booking.billable_items),
     )
 
 
@@ -361,6 +372,21 @@ def _serialize_detail(b: Booking) -> dict:
                 "is_included": t.is_included,
             }
             for t in b.taxes
+        ],
+        "billable_items_amount": str(b.billable_items_amount),
+        "billable_items": [
+            {
+                "id": str(i.id),
+                "billable_item_id": str(i.billable_item_id) if i.billable_item_id else None,
+                "name": i.name_snapshot,
+                "category": i.category_snapshot,
+                "pricing_type": i.pricing_type_snapshot,
+                "unit_price": str(i.unit_price_snapshot),
+                "quantity": i.quantity,
+                "is_taxable": i.is_taxable_snapshot,
+                "amount": str(i.calculated_amount),
+            }
+            for i in b.billable_items
         ],
         "total_amount": str(total),
         # payment summary
@@ -768,6 +794,7 @@ async def create_booking(
     total_guests = 0
     total_adults = 0
     total_children = 0
+    used_rate_plan_ids: set[uuid.UUID] = set()
     for idx, r in enumerate(body.rooms):
         acc = acc_map[r.accommodation_id]
         adults = len(r.adults)
@@ -841,13 +868,47 @@ async def create_booking(
         total_guests += adults + len(children_ages)
         total_adults += adults
         total_children += len(children_ages)
+        if q.rate_plan_id is not None:
+            used_rate_plan_ids.add(q.rate_plan_id)
 
-    # Reservation-level taxes over the net (pre-tax) subtotal = sum of room totals.
     net_subtotal = money(grand_total)
     nights = (body.check_out_date - body.check_in_date).days
+
+    # Billable items: booking-level charges, validated against the accommodations
+    # and rate plans actually used by this booking's rooms.
+    eligible_items = await load_eligible_items(
+        db, hotel_id, set(acc_map.keys()), used_rate_plan_ids, require_stage="booking"
+    )
+    eligible_map = {item.id: item for item in eligible_items}
+    billable_lines = []
+    for bi in body.billable_items:
+        item = eligible_map.get(bi.billable_item_id)
+        if item is None:
+            raise HTTPException(status_code=422, detail="One of the selected billable items is not available for this booking.")
+        billable_lines.append(compute_billable_item_line(
+            item, bi.quantity, nights, total_guests, total_adults, total_children, net_subtotal,
+        ))
+    for order, line in enumerate(billable_lines):
+        db.add(BookingBillableItem(
+            booking_id=b.id,
+            billable_item_id=line.billable_item_id,
+            name_snapshot=line.name,
+            category_snapshot=line.category,
+            pricing_type_snapshot=line.pricing_type,
+            unit_price_snapshot=line.unit_price,
+            quantity=line.quantity,
+            is_taxable_snapshot=line.is_taxable,
+            calculated_amount=line.amount,
+            display_order=order,
+        ))
+    billable_items_total = billable_grand_total(billable_lines)
+    taxable_billable = billable_taxable_total(billable_lines)
+
+    # Reservation-level taxes over the taxable base = room subtotal + taxable billable items.
+    taxable_base = money(net_subtotal + taxable_billable)
     active_taxes = await load_active_taxes(db, hotel_id)
     tax_lines = compute_taxes(
-        active_taxes, net_subtotal, nights, total_guests, total_adults, total_children
+        active_taxes, taxable_base, nights, total_guests, total_adults, total_children
     )
     for order, line in enumerate(tax_lines):
         db.add(BookingTax(
@@ -865,8 +926,9 @@ async def create_booking(
     tax_total = added_tax_total(tax_lines)
 
     b.subtotal_amount = net_subtotal
+    b.billable_items_amount = billable_items_total
     b.tax_total = tax_total
-    b.total_amount = money(net_subtotal + tax_total)
+    b.total_amount = money(net_subtotal + billable_items_total + tax_total)
     b.num_guests = total_guests
 
     # Deposit snapshot from a pay-at-property method (over the tax-inclusive total).
@@ -960,6 +1022,66 @@ async def record_payment(
         reference_number=body.reference_number,
         remarks=body.notes,
     ))
+
+    await db.commit()
+    return _serialize_detail(await _load_detail(db, booking_id))
+
+
+# ─── Add billable item (post-confirmation) ─────────────────────────────────
+
+@router.post("/{booking_id}/billable-items")
+async def add_billable_item(
+    booking_id: uuid.UUID,
+    body: BillableItemInput,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Add a billable item line to an existing booking (represents adding a
+    charge at check-in, during the stay, or at check-out -- there are no
+    dedicated screens for those stages yet, so this endpoint covers all of
+    them from the Booking Detail page). Does not retroactively recompute the
+    booking's already-snapshotted taxes; the line's amount is simply added."""
+    b = (await db.execute(
+        select(Booking)
+        .where(Booking.id == booking_id, Booking.hotel_id == user.hotel_id, Booking.deleted_at.is_(None))
+        .options(selectinload(Booking.rooms))
+    )).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    accommodation_ids = {r.accommodation_id for r in b.rooms}
+    rate_plan_ids = {r.rate_plan_id for r in b.rooms if r.rate_plan_id is not None}
+    nights = (b.check_out_date - b.check_in_date).days
+    total_adults = sum(r.num_adults for r in b.rooms)
+    total_children = sum(r.num_children for r in b.rooms)
+    total_guests = total_adults + total_children
+
+    eligible = await load_eligible_items(db, user.hotel_id, accommodation_ids, rate_plan_ids, require_stage=None)
+    eligible_map = {item.id: item for item in eligible}
+    item = eligible_map.get(body.billable_item_id)
+    if item is None:
+        raise HTTPException(status_code=422, detail="This billable item is not available for this booking.")
+
+    line = compute_billable_item_line(
+        item, body.quantity, nights, total_guests, total_adults, total_children, b.subtotal_amount,
+    )
+    next_order = (await db.execute(
+        select(func.count(BookingBillableItem.id)).where(BookingBillableItem.booking_id == b.id)
+    )).scalar() or 0
+    db.add(BookingBillableItem(
+        booking_id=b.id,
+        billable_item_id=line.billable_item_id,
+        name_snapshot=line.name,
+        category_snapshot=line.category,
+        pricing_type_snapshot=line.pricing_type,
+        unit_price_snapshot=line.unit_price,
+        quantity=line.quantity,
+        is_taxable_snapshot=line.is_taxable,
+        calculated_amount=line.amount,
+        display_order=next_order,
+    ))
+    b.billable_items_amount = money(b.billable_items_amount + line.amount)
+    b.total_amount = money(b.total_amount + line.amount)
 
     await db.commit()
     return _serialize_detail(await _load_detail(db, booking_id))

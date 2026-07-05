@@ -12,6 +12,7 @@ from app.models.property_portal import (
     BookingRoom, BookingRoomGuest, BookingNightlyRate, BookingStatusHistory,
     Tax, BookingTax,
     PaymentMethod, PaymentMethodBankAccount, PaymentTransaction,
+    BillableItem, BillableItemAccommodation, BillableItemRatePlan, BookingBillableItem,
 )
 from app.models.reference import ReferenceCountry, ReferenceStateProvince, ReferenceCity
 
@@ -29,5 +30,6 @@ __all__ = [
     "BookingRoom", "BookingRoomGuest", "BookingNightlyRate", "BookingStatusHistory",
     "Tax", "BookingTax",
     "PaymentMethod", "PaymentMethodBankAccount", "PaymentTransaction",
+    "BillableItem", "BillableItemAccommodation", "BillableItemRatePlan", "BookingBillableItem",
     "ReferenceCountry", "ReferenceStateProvince", "ReferenceCity",
 ]

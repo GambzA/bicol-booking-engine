@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Search, Check, Plus, Trash2, X } from 'lucide-react'
 import {
-  bookingsApi, type AvailabilityResult, type BookingQuote, type RoomInput,
+  bookingsApi, type AvailabilityResult, type BookingQuote, type RoomInput, type BillableItemInput,
 } from '../../../api/property/bookings'
 import { taxesApi, type TaxLine } from '../../../api/property/taxes'
 import { paymentMethodsApi, type PaymentMethod } from '../../../api/property/paymentMethods'
+import { billableItemsApi, type BillableItem } from '../../../api/property/billableItems'
 import { guestsApi, type Guest } from '../../../api/property/guests'
-import { BOOKING_SOURCES } from '../../../constants/propertyOptions'
+import { BOOKING_SOURCES, QUANTITY_INPUT_PRICING_TYPES } from '../../../constants/propertyOptions'
 import { Button } from '../../../components/common/Button'
 import { Input } from '../../../components/common/Input'
 import { Select } from '../../../components/common/Select'
@@ -138,12 +139,47 @@ export function CreateBookingPage() {
   const [saving, setSaving] = useState(false)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [paymentMethodId, setPaymentMethodId] = useState('')
+  const [eligibleItems, setEligibleItems] = useState<BillableItem[]>([])
+  // billable_item_id -> quantity (only meaningful for fixed_amount/per_quantity types)
+  const [selectedItems, setSelectedItems] = useState<Map<string, number>>(new Map())
 
   useEffect(() => {
     paymentMethodsApi.list({ active: true })
       .then((r) => setPaymentMethods(r.data.items))
       .catch(() => {})
   }, [])
+
+  // Eligible billable items depend on which accommodations/rate plans are in the
+  // cart; refetch whenever the room selection changes.
+  const cartAccommodationIds = rooms.map((r) => r.acc.accommodation_id).sort().join(',')
+  const cartRatePlanIds = rooms.map((r) => r.ratePlanId).filter(Boolean).sort().join(',')
+  useEffect(() => {
+    if (rooms.length === 0) { setEligibleItems([]); return }
+    billableItemsApi
+      .listEligible({
+        accommodation_ids: [...new Set(rooms.map((r) => r.acc.accommodation_id))],
+        rate_plan_ids: [...new Set(rooms.map((r) => r.ratePlanId).filter(Boolean))],
+      })
+      .then((r) => setEligibleItems(r.data.items))
+      .catch(() => setEligibleItems([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartAccommodationIds, cartRatePlanIds])
+
+  const toggleItem = (item: BillableItem) => {
+    setSelectedItems((prev) => {
+      const next = new Map(prev)
+      if (next.has(item.id)) next.delete(item.id)
+      else next.set(item.id, 1)
+      return next
+    })
+  }
+  const setItemQuantity = (itemId: string, qty: number) => {
+    setSelectedItems((prev) => {
+      const next = new Map(prev)
+      next.set(itemId, Math.max(1, qty))
+      return next
+    })
+  }
 
   const primaryName = guest?.name ?? ''
   const nights = nightsBetween(checkIn, checkOut)
@@ -309,22 +345,44 @@ export function CreateBookingPage() {
   const allPriced = rooms.length > 0 && rooms.every((r) => r.quote && !r.error && !r.quoting)
   const totalAdults = rooms.reduce((s, r) => s + r.adults.length, 0)
   const totalChildren = rooms.reduce((s, r) => s + r.children.length, 0)
+  const totalGuests = totalAdults + totalChildren
+
+  // Billable item line estimates (trivial formulas -- no server round-trip
+  // needed; the create endpoint recomputes and stores the authoritative amounts).
+  const selectedItemLines = eligibleItems
+    .filter((item) => selectedItems.has(item.id))
+    .map((item) => {
+      const unitPrice = parseFloat(item.unit_price)
+      const inputQty = selectedItems.get(item.id) ?? 1
+      let quantity = inputQty
+      let amount = unitPrice * inputQty
+      if (item.pricing_type === 'percentage_of_booking') { quantity = 1; amount = grandTotal * unitPrice / 100 }
+      else if (item.pricing_type === 'per_night') { quantity = nights; amount = unitPrice * nights }
+      else if (item.pricing_type === 'per_guest') { quantity = totalGuests; amount = unitPrice * totalGuests }
+      else if (item.pricing_type === 'per_adult') { quantity = totalAdults; amount = unitPrice * totalAdults }
+      else if (item.pricing_type === 'per_child') { quantity = totalChildren; amount = unitPrice * totalChildren }
+      return { item, quantity, amount }
+    })
+  const billableItemsTotal = selectedItemLines.reduce((s, l) => s + l.amount, 0)
+  const taxableBillableTotal = selectedItemLines.filter((l) => l.item.is_taxable).reduce((s, l) => s + l.amount, 0)
 
   // Reservation-level taxes previewed live once the rooms are priced. Computed
-  // server-side (single source of truth) over the summed net subtotal.
+  // server-side (single source of truth) over the room subtotal plus taxable
+  // billable items, matching how the create endpoint folds them into the tax base.
   const [taxLines, setTaxLines] = useState<TaxLine[]>([])
   const [taxTotal, setTaxTotal] = useState(0)
+  const taxableBase = grandTotal + taxableBillableTotal
   useEffect(() => {
     if (!allPriced) { setTaxLines([]); setTaxTotal(0); return }
     let cancelled = false
     taxesApi
-      .preview({ subtotal: String(grandTotal), nights, num_adults: totalAdults, num_children: totalChildren })
+      .preview({ subtotal: String(taxableBase), nights, num_adults: totalAdults, num_children: totalChildren })
       .then((r) => { if (!cancelled) { setTaxLines(r.data.taxes); setTaxTotal(parseFloat(r.data.tax_total)) } })
       .catch(() => { if (!cancelled) { setTaxLines([]); setTaxTotal(0) } })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPriced, grandTotal, nights, totalAdults, totalChildren])
-  const finalTotal = grandTotal + taxTotal
+  }, [allPriced, taxableBase, nights, totalAdults, totalChildren])
+  const finalTotal = grandTotal + billableItemsTotal + taxTotal
 
   const selectedMethod = paymentMethods.find((m) => m.id === paymentMethodId) ?? null
   const depositAmount =
@@ -335,7 +393,7 @@ export function CreateBookingPage() {
       : 0
 
   const handleConfirm = async (status: 'confirmed' | 'pending') => {
-    if (!guest || !allPriced) return
+    if (!guest || !allPriced || !paymentMethodId) return
     setSaving(true)
     try {
       const payload: RoomInput[] = rooms.map((r) => ({
@@ -346,12 +404,16 @@ export function CreateBookingPage() {
         adults: r.adults.map((a) => ({ full_name: a.full_name.trim() || null })),
         children: r.children.map((c) => ({ age: c.age, full_name: c.full_name.trim() || null })),
       }))
+      const billableItemsPayload: BillableItemInput[] = selectedItemLines.map((l) => ({
+        billable_item_id: l.item.id, quantity: l.quantity,
+      }))
       const r = await bookingsApi.create({
         guest_id: guest.id,
         check_in_date: checkIn, check_out_date: checkOut,
         booking_source: source, notes: notes || null, status,
         payment_method_id: paymentMethodId || null,
         rooms: payload,
+        billable_items: billableItemsPayload,
       })
       toast.success('Booking created.')
       navigate(`/bookings/${r.data.id}`)
@@ -713,11 +775,57 @@ export function CreateBookingPage() {
                 </div>
               </div>
 
+              {eligibleItems.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <h3 className="mb-3 text-sm font-semibold text-slate-800">Billable Items</h3>
+                  <div className="space-y-2">
+                    {eligibleItems.map((item) => {
+                      const selected = selectedItems.has(item.id)
+                      const showQty = QUANTITY_INPUT_PRICING_TYPES.includes(item.pricing_type)
+                      const line = selectedItemLines.find((l) => l.item.id === item.id)
+                      return (
+                        <div key={item.id} className={`rounded-lg border px-4 py-3 ${selected ? 'border-slate-300 bg-slate-50' : 'border-slate-100'}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <label className="flex flex-1 items-center gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => toggleItem(item)}
+                                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                              />
+                              <div>
+                                <p className="text-sm font-medium text-slate-800">{item.name}</p>
+                                <p className="text-xs text-slate-400">
+                                  {item.pricing_type === 'percentage_of_booking'
+                                    ? `${parseFloat(item.unit_price)}% of booking`
+                                    : `₱${money(item.unit_price)} ${item.pricing_type.replace(/_/g, ' ')}`}
+                                </p>
+                              </div>
+                            </label>
+                            {selected && showQty && (
+                              <div className="w-20">
+                                <NumberField value={selectedItems.get(item.id) ?? 1} onCommit={(n) => setItemQuantity(item.id, n)} min={1} />
+                              </div>
+                            )}
+                            {selected && line && (
+                              <span className="whitespace-nowrap text-sm font-semibold text-slate-800">₱{money(String(line.amount))}</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {!paymentMethodId && (
+                <p className="text-right text-xs text-amber-600">Select a payment method before continuing.</p>
+              )}
               <div className="flex justify-between">
                 <Button variant="secondary" onClick={() => setStep(2)}>Back</Button>
                 <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => handleConfirm('pending')} loading={saving} disabled={!allPriced}>Save as Pending</Button>
-                  <Button onClick={() => handleConfirm('confirmed')} loading={saving} disabled={!allPriced}>Confirm Booking</Button>
+                  <Button variant="secondary" onClick={() => handleConfirm('pending')} loading={saving} disabled={!allPriced || !paymentMethodId}>Save as Pending</Button>
+                  <Button onClick={() => handleConfirm('confirmed')} loading={saving} disabled={!allPriced || !paymentMethodId}>Confirm Booking</Button>
                 </div>
               </div>
             </div>
@@ -753,6 +861,19 @@ export function CreateBookingPage() {
                   </div>
                 ))}
               </div>
+
+              {selectedItemLines.length > 0 && (
+                <div className="mt-4 space-y-1 border-t border-slate-100 pt-3 text-sm">
+                  {selectedItemLines.map((l) => (
+                    <div key={l.item.id} className="flex items-start justify-between gap-2">
+                      <span className="text-slate-500">
+                        {l.item.name}{l.item.pricing_type !== 'percentage_of_booking' && QUANTITY_INPUT_PRICING_TYPES.includes(l.item.pricing_type) ? ` ×${l.quantity}` : ''}
+                      </span>
+                      <span className="font-medium text-slate-800">&#8369;{money(String(l.amount))}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {(taxLines.length > 0 || rooms.length > 0) && (
                 <div className="mt-4 space-y-1 border-t border-slate-100 pt-3 text-sm">
