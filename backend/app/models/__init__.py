@@ -6,11 +6,12 @@ from app.models.billing import Invoice, Payment, CommissionStatement, Commission
 from app.models.billing import InvoiceType, InvoiceStatus, PeriodType, CommissionStatementStatus
 from app.models.audit_log import AuditLog
 from app.models.property_portal import (
-    Accommodation, AccommodationChildPolicy, Guest, Booking, GuestPayment,
-    AccommodationType, BookingStatus, BookingSource, GuestPaymentStatus,
+    Accommodation, AccommodationChildPolicy, Guest, Booking, PaymentRecord,
+    AccommodationType, BookingStatus, BookingSource, PaymentRecordStatus,
     Package, PackageAccommodation, PackageInclusion,
     BookingRoom, BookingRoomGuest, BookingNightlyRate, BookingStatusHistory,
     Tax, BookingTax,
+    PaymentMethod, PaymentMethodBankAccount, PaymentTransaction,
 )
 from app.models.reference import ReferenceCountry, ReferenceStateProvince, ReferenceCity
 
@@ -22,10 +23,11 @@ __all__ = [
     "Invoice", "Payment", "CommissionStatement", "CommissionAdjustment",
     "InvoiceType", "InvoiceStatus", "PeriodType", "CommissionStatementStatus",
     "AuditLog",
-    "Accommodation", "AccommodationChildPolicy", "Guest", "Booking", "GuestPayment",
-    "AccommodationType", "BookingStatus", "BookingSource", "GuestPaymentStatus",
+    "Accommodation", "AccommodationChildPolicy", "Guest", "Booking", "PaymentRecord",
+    "AccommodationType", "BookingStatus", "BookingSource", "PaymentRecordStatus",
     "Package", "PackageAccommodation", "PackageInclusion",
     "BookingRoom", "BookingRoomGuest", "BookingNightlyRate", "BookingStatusHistory",
     "Tax", "BookingTax",
+    "PaymentMethod", "PaymentMethodBankAccount", "PaymentTransaction",
     "ReferenceCountry", "ReferenceStateProvince", "ReferenceCity",
 ]

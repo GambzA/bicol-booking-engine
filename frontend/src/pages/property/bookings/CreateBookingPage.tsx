@@ -5,6 +5,7 @@ import {
   bookingsApi, type AvailabilityResult, type BookingQuote, type RoomInput,
 } from '../../../api/property/bookings'
 import { taxesApi, type TaxLine } from '../../../api/property/taxes'
+import { paymentMethodsApi, type PaymentMethod } from '../../../api/property/paymentMethods'
 import { guestsApi, type Guest } from '../../../api/property/guests'
 import { BOOKING_SOURCES } from '../../../constants/propertyOptions'
 import { Button } from '../../../components/common/Button'
@@ -135,6 +136,14 @@ export function CreateBookingPage() {
   const [source, setSource] = useState('walk_in')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [paymentMethodId, setPaymentMethodId] = useState('')
+
+  useEffect(() => {
+    paymentMethodsApi.list({ active: true })
+      .then((r) => setPaymentMethods(r.data.items))
+      .catch(() => {})
+  }, [])
 
   const primaryName = guest?.name ?? ''
   const nights = nightsBetween(checkIn, checkOut)
@@ -317,6 +326,14 @@ export function CreateBookingPage() {
   }, [allPriced, grandTotal, nights, totalAdults, totalChildren])
   const finalTotal = grandTotal + taxTotal
 
+  const selectedMethod = paymentMethods.find((m) => m.id === paymentMethodId) ?? null
+  const depositAmount =
+    selectedMethod && selectedMethod.method_type === 'pay_at_property' && selectedMethod.deposit_required
+      ? selectedMethod.deposit_type === 'percentage'
+        ? finalTotal * parseFloat(selectedMethod.deposit_value ?? '0') / 100
+        : Math.min(parseFloat(selectedMethod.deposit_value ?? '0'), finalTotal)
+      : 0
+
   const handleConfirm = async (status: 'confirmed' | 'pending') => {
     if (!guest || !allPriced) return
     setSaving(true)
@@ -333,6 +350,7 @@ export function CreateBookingPage() {
         guest_id: guest.id,
         check_in_date: checkIn, check_out_date: checkOut,
         booking_source: source, notes: notes || null, status,
+        payment_method_id: paymentMethodId || null,
         rooms: payload,
       })
       toast.success('Booking created.')
@@ -674,6 +692,20 @@ export function CreateBookingPage() {
                     <label className="mb-1 block text-sm font-medium text-slate-600">Booking Source</label>
                     <Select value={source} onChange={(e) => setSource(e.target.value)} options={BOOKING_SOURCES} />
                   </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-600">Payment Method</label>
+                    <Select
+                      value={paymentMethodId}
+                      onChange={(e) => setPaymentMethodId(e.target.value)}
+                      options={[
+                        { value: '', label: paymentMethods.length ? 'Select a method...' : 'No enabled methods' },
+                        ...paymentMethods.map((m) => ({ value: m.id, label: m.name })),
+                      ]}
+                    />
+                    {selectedMethod?.instructions && (
+                      <p className="mt-1 text-xs text-slate-400">{selectedMethod.instructions}</p>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-4">
                   <label className="mb-1 block text-sm font-medium text-slate-600">Notes</label>
@@ -747,6 +779,23 @@ export function CreateBookingPage() {
                 <span>Total</span>
                 <span>&#8369;{money(String(finalTotal))}</span>
               </div>
+              {selectedMethod && (
+                <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Payment</span>
+                    <span className="font-medium text-slate-800">{selectedMethod.name}</span>
+                  </div>
+                  {depositAmount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Deposit due</span>
+                      <span className="font-medium text-slate-800">&#8369;{money(String(depositAmount))}</span>
+                    </div>
+                  )}
+                  {selectedMethod.method_type === 'pay_at_property' && (
+                    <p className="text-xs text-slate-400">Balance collected at the property.</p>
+                  )}
+                </div>
+              )}
               {!allPriced && rooms.length > 0 && (
                 <p className="mt-2 text-xs text-amber-600">Resolve room pricing before continuing.</p>
               )}

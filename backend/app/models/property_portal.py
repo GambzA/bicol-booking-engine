@@ -111,11 +111,13 @@ class BookingSource(str, enum.Enum):
     MANUAL = "manual"
 
 
-class GuestPaymentStatus(str, enum.Enum):
+class PaymentRecordStatus(str, enum.Enum):
     PENDING = "pending"
+    PARTIALLY_PAID = "partially_paid"
     PAID = "paid"
     FAILED = "failed"
     REFUNDED = "refunded"
+    CANCELLED = "cancelled"
 
 
 class Accommodation(TimestampMixin, Base):
@@ -387,14 +389,21 @@ class Booking(TimestampMixin, Base):
     )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     booking_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    payment_method_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("payment_methods.id", ondelete="SET NULL"), nullable=True
+    )
+    payment_method_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    deposit_required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    deposit_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
 
     hotel: Mapped["Hotel"] = relationship("Hotel")
     guest: Mapped["Guest"] = relationship("Guest", back_populates="bookings")
+    payment_method: Mapped[Optional["PaymentMethod"]] = relationship("PaymentMethod")
     rooms: Mapped[list["BookingRoom"]] = relationship(
         "BookingRoom", back_populates="booking",
         cascade="all, delete-orphan", order_by="BookingRoom.display_order",
     )
-    payments: Mapped[list["GuestPayment"]] = relationship("GuestPayment", back_populates="booking")
+    payments: Mapped[list["PaymentRecord"]] = relationship("PaymentRecord", back_populates="booking")
     status_history: Mapped[list["BookingStatusHistory"]] = relationship(
         "BookingStatusHistory", back_populates="booking",
         cascade="all, delete-orphan", order_by="BookingStatusHistory.created_at",
@@ -471,25 +480,36 @@ class BookingRoomGuest(Base):
     room: Mapped["BookingRoom"] = relationship("BookingRoom", back_populates="guests")
 
 
-class GuestPayment(Base):
-    __tablename__ = "guest_payments"
+class PaymentRecord(Base):
+    """A financial event on a booking (deposit, payment, refund). Summarizes the
+    outcome of one or more immutable ``PaymentTransaction`` rows."""
+    __tablename__ = "payment_records"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
     booking_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("bookings.id"), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     payment_date: Mapped[date] = mapped_column(Date, nullable=False)
-    method: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    method: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # legacy free-text label
+    payment_method_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("payment_methods.id", ondelete="SET NULL"), nullable=True
+    )
+    payment_method_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     reference_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    status: Mapped[GuestPaymentStatus] = mapped_column(
-        SQLEnum(GuestPaymentStatus, name="guestpaymentstatus", create_type=False, values_callable=lambda x: [e.value for e in x]),
+    status: Mapped[PaymentRecordStatus] = mapped_column(
+        SQLEnum(PaymentRecordStatus, name="paymentrecordstatus", create_type=False, values_callable=lambda x: [e.value for e in x]),
         nullable=False, server_default="pending",
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     hotel: Mapped["Hotel"] = relationship("Hotel")
     booking: Mapped[Optional["Booking"]] = relationship("Booking", back_populates="payments")
+    payment_method: Mapped[Optional["PaymentMethod"]] = relationship("PaymentMethod")
+    transactions: Mapped[list["PaymentTransaction"]] = relationship(
+        "PaymentTransaction", back_populates="record",
+        cascade="all, delete-orphan", order_by="PaymentTransaction.created_at",
+    )
 
 
 class BookingNightlyRate(Base):
@@ -579,3 +599,73 @@ class BookingTax(Base):
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
     booking: Mapped["Booking"] = relationship("Booking", back_populates="taxes")
+
+
+class PaymentMethod(TimestampMixin, Base):
+    """A configured way for guests to pay (bank transfer, pay at property, and
+    future gateways). Bookings reference a method; per-type config lives here and
+    on child tables so adding a provider needs no booking-model change."""
+    __tablename__ = "payment_methods"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
+    method_type: Mapped[str] = mapped_column(String(30), nullable=False)  # 'bank_transfer' | 'pay_at_property'
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Pay-at-property deposit config
+    deposit_required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    deposit_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # 'fixed' | 'percentage'
+    deposit_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+
+    hotel: Mapped["Hotel"] = relationship("Hotel")
+    bank_accounts: Mapped[list["PaymentMethodBankAccount"]] = relationship(
+        "PaymentMethodBankAccount", back_populates="payment_method",
+        cascade="all, delete-orphan", order_by="PaymentMethodBankAccount.display_order",
+    )
+
+
+class PaymentMethodBankAccount(Base):
+    """One bank account under a bank-transfer payment method."""
+    __tablename__ = "payment_method_bank_accounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    payment_method_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("payment_methods.id", ondelete="CASCADE"), nullable=False
+    )
+    account_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    bank_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_number: Mapped[str] = mapped_column(String(100), nullable=False)
+    branch: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    swift_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    iban: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    qr_image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    payment_method: Mapped["PaymentMethod"] = relationship("PaymentMethod", back_populates="bank_accounts")
+
+
+class PaymentTransaction(Base):
+    """Immutable processing/audit event under a payment record. Never edited or
+    deleted; new payment events append new rows. Gateway integrations write only
+    here (opaque ``gateway_response`` kept as text)."""
+    __tablename__ = "payment_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    payment_record_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("payment_records.id", ondelete="CASCADE"), nullable=False
+    )
+    transaction_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    external_transaction_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    gateway_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reference_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    record: Mapped["PaymentRecord"] = relationship("PaymentRecord", back_populates="transactions")

@@ -92,15 +92,29 @@ export interface PaymentSummary {
   payment_status: string
 }
 
+export interface PaymentTransaction {
+  id: string
+  transaction_type: string
+  status: string
+  amount: string
+  external_transaction_id: string | null
+  reference_number: string | null
+  remarks: string | null
+  created_at: string
+}
+
 export interface BookingPayment {
   id: string
   amount: string
   payment_date: string
   method: string | null
+  payment_method_id: string | null
+  payment_method_name: string | null
   reference_number: string | null
   notes: string | null
   status: string
   created_at: string
+  transactions: PaymentTransaction[]
 }
 
 export interface TimelineEntry {
@@ -175,6 +189,10 @@ export interface BookingDetail {
   num_guests: number
   rooms_count: number
   notes: string | null
+  payment_method_id: string | null
+  payment_method_name: string | null
+  deposit_required: boolean
+  deposit_amount: string
   rooms: BookingRoom[]
   base_amount: string
   additional_adult_amount: string
@@ -249,6 +267,7 @@ export const bookingsApi = {
     booking_source?: string | null
     notes?: string | null
     status?: string
+    payment_method_id?: string | null
     rooms: RoomInput[]
   }) => api.post<BookingDetail>(BASE, data),
 
@@ -259,8 +278,10 @@ export const bookingsApi = {
     amount: string
     payment_date?: string | null
     method?: string | null
+    payment_method_id?: string | null
     reference_number?: string | null
     notes?: string | null
+    is_refund?: boolean
   }) => api.post<BookingDetail>(`${BASE}/${id}/payments`, data),
 
   delete: (id: string) => api.delete(`${BASE}/${id}`),

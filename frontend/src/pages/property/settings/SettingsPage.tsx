@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Receipt, ChevronRight } from 'lucide-react'
+import { Receipt, CreditCard, ChevronRight } from 'lucide-react'
 
 const SETTINGS = [
   {
@@ -7,6 +7,12 @@ const SETTINGS = [
     icon: Receipt,
     title: 'Tax Configuration',
     description: 'Configure the taxes applied to your bookings (VAT, service charge, fees).',
+  },
+  {
+    to: '/settings/payment-methods',
+    icon: CreditCard,
+    title: 'Payment Methods',
+    description: 'Configure how guests pay: bank transfer accounts and pay-at-property deposits.',
   },
 ]
 

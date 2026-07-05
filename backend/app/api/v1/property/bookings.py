@@ -14,7 +14,8 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.property_portal import (
     Accommodation, Guest, Booking, BookingRoom, BookingRoomGuest, BookingStatus, BookingSource,
-    BookingNightlyRate, BookingStatusHistory, BookingTax, GuestPayment, GuestPaymentStatus,
+    BookingNightlyRate, BookingStatusHistory, BookingTax, PaymentRecord, PaymentRecordStatus,
+    PaymentTransaction, PaymentMethod,
     RatePlan, RatePlanAccommodation, Promotion, PromotionAccommodation, PromotionRatePlan,
     Package, PackageAccommodation,
 )
@@ -76,6 +77,7 @@ class BookingCreate(BaseModel):
     booking_source: Optional[str] = None
     notes: Optional[str] = None
     status: str = "confirmed"  # "pending" or "confirmed"
+    payment_method_id: Optional[uuid.UUID] = None
     rooms: list[RoomInput] = Field(min_length=1)
 
 
@@ -88,8 +90,10 @@ class PaymentBody(BaseModel):
     amount: Decimal = Field(gt=0)
     payment_date: Optional[date] = None
     method: Optional[str] = None
+    payment_method_id: Optional[uuid.UUID] = None
     reference_number: Optional[str] = None
     notes: Optional[str] = None
+    is_refund: bool = False
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
@@ -104,6 +108,36 @@ def _payment_status(total: Decimal, paid: Decimal) -> str:
     if paid < total:
         return "partially_paid"
     return "paid"
+
+
+async def _resolve_payment_method(
+    db: AsyncSession, hotel_id: uuid.UUID, method_id: Optional[uuid.UUID], require_enabled: bool = True
+) -> Optional[PaymentMethod]:
+    if method_id is None:
+        return None
+    pm = (await db.execute(
+        select(PaymentMethod).where(
+            PaymentMethod.id == method_id,
+            PaymentMethod.hotel_id == hotel_id,
+            PaymentMethod.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if pm is None:
+        raise HTTPException(status_code=422, detail="Selected payment method is not available.")
+    if require_enabled and not pm.is_enabled:
+        raise HTTPException(status_code=422, detail="Selected payment method is not enabled.")
+    return pm
+
+
+def _compute_deposit(pm: PaymentMethod, total: Decimal) -> tuple[bool, Decimal]:
+    """Deposit snapshot for a booking, from the method's pay-at-property config."""
+    if pm is None or pm.method_type != "pay_at_property" or not pm.deposit_required:
+        return False, ZERO
+    if pm.deposit_type == "percentage" and pm.deposit_value is not None:
+        return True, money(total * Decimal(pm.deposit_value) / Decimal("100"))
+    if pm.deposit_type == "fixed" and pm.deposit_value is not None:
+        return True, money(min(Decimal(pm.deposit_value), total))
+    return True, ZERO
 
 
 def _clean_name(name: Optional[str]) -> Optional[str]:
@@ -153,7 +187,7 @@ def _detail_options():
         selectinload(Booking.rooms).selectinload(BookingRoom.guests),
         selectinload(Booking.rooms).selectinload(BookingRoom.nightly_rates),
         selectinload(Booking.status_history),
-        selectinload(Booking.payments),
+        selectinload(Booking.payments).selectinload(PaymentRecord.transactions),
         selectinload(Booking.taxes),
     )
 
@@ -189,16 +223,32 @@ async def _generate_booking_number(db: AsyncSession) -> str:
     raise HTTPException(status_code=500, detail="Could not generate a unique booking number")
 
 
-def _serialize_payment(p: GuestPayment) -> dict:
+def _serialize_transaction(t: PaymentTransaction) -> dict:
+    return {
+        "id": str(t.id),
+        "transaction_type": t.transaction_type,
+        "status": t.status,
+        "amount": str(t.amount),
+        "external_transaction_id": t.external_transaction_id,
+        "reference_number": t.reference_number,
+        "remarks": t.remarks,
+        "created_at": t.created_at.isoformat(),
+    }
+
+
+def _serialize_payment(p: PaymentRecord) -> dict:
     return {
         "id": str(p.id),
         "amount": str(p.amount),
         "payment_date": p.payment_date.isoformat(),
         "method": p.method,
+        "payment_method_id": str(p.payment_method_id) if p.payment_method_id else None,
+        "payment_method_name": p.payment_method_name_snapshot or p.method,
         "reference_number": p.reference_number,
         "notes": p.notes,
         "status": _status_value(p.status),
         "created_at": p.created_at.isoformat(),
+        "transactions": [_serialize_transaction(t) for t in p.transactions],
     }
 
 
@@ -282,6 +332,10 @@ def _serialize_detail(b: Booking) -> dict:
         "num_guests": b.num_guests,
         "rooms_count": len(rooms),
         "notes": b.notes,
+        "payment_method_id": str(b.payment_method_id) if b.payment_method_id else None,
+        "payment_method_name": b.payment_method_name_snapshot,
+        "deposit_required": b.deposit_required,
+        "deposit_amount": str(b.deposit_amount),
         "rooms": [_serialize_room(r, primary_name) for r in rooms],
         # stay-level aggregates (summed across rooms)
         "base_amount": str(_sum("base_amount")),
@@ -502,10 +556,10 @@ async def list_bookings(
     hotel_id = user.hotel_id
 
     paid_subq = (
-        select(func.coalesce(func.sum(GuestPayment.amount), 0))
+        select(func.coalesce(func.sum(PaymentRecord.amount), 0))
         .where(
-            GuestPayment.booking_id == Booking.id,
-            GuestPayment.status == GuestPaymentStatus.PAID,
+            PaymentRecord.booking_id == Booking.id,
+            PaymentRecord.status == PaymentRecordStatus.PAID,
         )
         .correlate(Booking)
         .scalar_subquery()
@@ -688,6 +742,8 @@ async def create_booking(
                 detail=f"Only {available} unit(s) of '{acc.name}' available for these dates; {need} requested.",
             )
 
+    payment_method = await _resolve_payment_method(db, hotel_id, body.payment_method_id)
+
     booking_number = await _generate_booking_number(db)
     status = BookingStatus(body.status)
 
@@ -702,6 +758,8 @@ async def create_booking(
         status=status,
         booking_source=body.booking_source,
         notes=body.notes,
+        payment_method_id=payment_method.id if payment_method else None,
+        payment_method_name_snapshot=payment_method.name if payment_method else None,
     )
     db.add(b)
     await db.flush()
@@ -811,6 +869,12 @@ async def create_booking(
     b.total_amount = money(net_subtotal + tax_total)
     b.num_guests = total_guests
 
+    # Deposit snapshot from a pay-at-property method (over the tax-inclusive total).
+    if payment_method is not None:
+        deposit_required, deposit_amount = _compute_deposit(payment_method, b.total_amount)
+        b.deposit_required = deposit_required
+        b.deposit_amount = deposit_amount
+
     db.add(BookingStatusHistory(
         booking_id=b.id,
         from_status=None,
@@ -867,16 +931,36 @@ async def record_payment(
     user: User = Depends(get_current_user),
 ):
     b = await _get_or_404(db, booking_id, user.hotel_id)
-    db.add(GuestPayment(
+    # A payment method may be picked; not required (allows legacy free-text `method`).
+    pm = await _resolve_payment_method(db, user.hotel_id, body.payment_method_id, require_enabled=False)
+
+    record_status = PaymentRecordStatus.REFUNDED if body.is_refund else PaymentRecordStatus.PAID
+    record = PaymentRecord(
         hotel_id=user.hotel_id,
         booking_id=b.id,
         amount=body.amount,
         payment_date=body.payment_date or date.today(),
         method=body.method,
+        payment_method_id=pm.id if pm else None,
+        payment_method_name_snapshot=pm.name if pm else body.method,
         reference_number=body.reference_number,
         notes=body.notes,
-        status=GuestPaymentStatus.PAID,
+        status=record_status,
+    )
+    db.add(record)
+    await db.flush()
+
+    # Immutable transaction event for this financial action (gateway-ready audit).
+    txn_type = "refund_completed" if body.is_refund else "manual_payment_recorded"
+    db.add(PaymentTransaction(
+        payment_record_id=record.id,
+        transaction_type=txn_type,
+        status=_status_value(record_status),
+        amount=body.amount,
+        reference_number=body.reference_number,
+        remarks=body.notes,
     ))
+
     await db.commit()
     return _serialize_detail(await _load_detail(db, booking_id))
 

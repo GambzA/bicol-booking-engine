@@ -1,4 +1,4 @@
-import { BOOKING_STATUSES, BOOKING_PAYMENT_STATUSES } from '../../constants/propertyOptions'
+import { BOOKING_STATUSES, BOOKING_PAYMENT_STATUSES, PAYMENT_RECORD_STATUSES } from '../../constants/propertyOptions'
 
 const COLOR_CLASS: Record<string, string> = {
   amber: 'bg-amber-100 text-amber-700',
@@ -10,6 +10,7 @@ const COLOR_CLASS: Record<string, string> = {
 
 const STATUS_MAP = Object.fromEntries(BOOKING_STATUSES.map((s) => [s.value, s]))
 const PAYMENT_MAP = Object.fromEntries(BOOKING_PAYMENT_STATUSES.map((s) => [s.value, s]))
+const RECORD_MAP = Object.fromEntries(PAYMENT_RECORD_STATUSES.map((s) => [s.value, s]))
 
 function Pill({ label, color }: { label: string; color: string }) {
   return (
@@ -26,5 +27,10 @@ export function BookingStatusBadge({ status }: { status: string }) {
 
 export function PaymentStatusBadge({ status }: { status: string }) {
   const s = PAYMENT_MAP[status]
+  return <Pill label={s?.label ?? status} color={s?.color ?? 'slate'} />
+}
+
+export function PaymentRecordBadge({ status }: { status: string }) {
+  const s = RECORD_MAP[status]
   return <Pill label={s?.label ?? status} color={s?.color ?? 'slate'} />
 }

@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Plus } from 'lucide-react'
 import { bookingsApi, type BookingDetail, type BookingRoom } from '../../../api/property/bookings'
+import { paymentMethodsApi, type PaymentMethod } from '../../../api/property/paymentMethods'
 import {
   BOOKING_STATUSES, BOOKING_SOURCES, PAYMENT_METHODS, ACCOMMODATION_TYPES,
+  PAYMENT_RECORD_STATUSES, TRANSACTION_TYPE_LABELS,
 } from '../../../constants/propertyOptions'
 import { Button } from '../../../components/common/Button'
 import { Input } from '../../../components/common/Input'
 import { Select } from '../../../components/common/Select'
 import { PageLoader } from '../../../components/common/PageLoader'
 import { useToast } from '../../../components/common/useToast'
-import { BookingStatusBadge, PaymentStatusBadge } from '../../../components/property/BookingBadges'
+import { BookingStatusBadge, PaymentStatusBadge, PaymentRecordBadge } from '../../../components/property/BookingBadges'
 
 const ASSIGNABLE = BOOKING_STATUSES.map((s) => ({ value: s.value, label: s.label }))
 const SOURCE_LABELS: Record<string, string> = Object.fromEntries(BOOKING_SOURCES.map((s) => [s.value, s.label]))
@@ -124,9 +126,10 @@ export function BookingDetailPage() {
 
   const [payOpen, setPayOpen] = useState(false)
   const [payAmount, setPayAmount] = useState('')
-  const [payMethod, setPayMethod] = useState('cash')
+  const [payMethod, setPayMethod] = useState('')
   const [payRef, setPayRef] = useState('')
   const [savingPay, setSavingPay] = useState(false)
+  const [methods, setMethods] = useState<PaymentMethod[]>([])
 
   useEffect(() => {
     if (!id) return
@@ -135,6 +138,12 @@ export function BookingDetailPage() {
       .catch(() => { toast.error('Failed to load booking.'); navigate('/bookings') })
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    paymentMethodsApi.list({ active: true })
+      .then((r) => setMethods(r.data.items))
+      .catch(() => {})
+  }, [])
 
   const handleStatusUpdate = async () => {
     if (!id || !booking || newStatus === booking.status) return
@@ -157,10 +166,12 @@ export function BookingDetailPage() {
     const val = parseFloat(payAmount)
     if (isNaN(val) || val <= 0) { toast.error('Enter a valid payment amount.'); return }
     setSavingPay(true)
+    const isConfigured = methods.some((m) => m.id === payMethod)
     try {
       const r = await bookingsApi.recordPayment(id, {
         amount: String(val),
-        method: payMethod || null,
+        payment_method_id: isConfigured ? payMethod : null,
+        method: isConfigured ? null : (payMethod || null),
         reference_number: payRef || null,
       })
       setBooking(r.data)
@@ -294,6 +305,8 @@ export function BookingDetailPage() {
                 </button>
               }
             >
+              {booking.payment_method_name && <Row label="Method" value={booking.payment_method_name} />}
+              {booking.deposit_required && <Row label="Deposit Required" value={`₱${money(booking.deposit_amount)}`} />}
               <Row label="Booking Total" value={`₱${money(ps.booking_total)}`} />
               <Row label="Total Paid" value={`₱${money(ps.total_paid)}`} />
               <Row label="Outstanding" value={`₱${money(ps.outstanding_balance)}`} />
@@ -305,7 +318,15 @@ export function BookingDetailPage() {
               {payOpen && (
                 <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
                   <Input type="number" min="0.01" step="0.01" placeholder="Amount" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
-                  <Select options={PAYMENT_METHODS} value={payMethod} onChange={(e) => setPayMethod(e.target.value)} />
+                  <Select
+                    options={
+                      methods.length > 0
+                        ? [{ value: '', label: 'Select a method...' }, ...methods.map((m) => ({ value: m.id, label: m.name }))]
+                        : PAYMENT_METHODS
+                    }
+                    value={payMethod}
+                    onChange={(e) => setPayMethod(e.target.value)}
+                  />
                   <Input placeholder="Reference # (optional)" value={payRef} onChange={(e) => setPayRef(e.target.value)} />
                   <Button className="w-full" onClick={handleRecordPayment} loading={savingPay}>Record Payment</Button>
                 </div>
@@ -313,13 +334,34 @@ export function BookingDetailPage() {
 
               {booking.payments.length > 0 && (
                 <div className="mt-4 border-t border-slate-100 pt-3">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Payments</p>
-                  {booking.payments.map((p) => (
-                    <div key={p.id} className="flex justify-between py-1 text-sm">
-                      <span className="text-slate-500">{new Date(p.payment_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} &middot; {p.method ?? '--'}</span>
-                      <span className="font-medium text-slate-800">&#8369;{money(p.amount)}</span>
-                    </div>
-                  ))}
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Payment Records</p>
+                  <div className="space-y-2">
+                    {booking.payments.map((p) => (
+                      <div key={p.id} className="rounded-lg border border-slate-100 p-2.5">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500">
+                            {new Date(p.payment_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                            {' · '}{p.payment_method_name ?? p.method ?? '--'}
+                          </span>
+                          <span className="font-medium text-slate-800">&#8369;{money(p.amount)}</span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between">
+                          <PaymentRecordBadge status={p.status} />
+                          {p.reference_number && <span className="text-xs text-slate-400">Ref: {p.reference_number}</span>}
+                        </div>
+                        {p.transactions.length > 0 && (
+                          <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                            {p.transactions.map((t) => (
+                              <div key={t.id} className="flex items-center justify-between text-xs text-slate-400">
+                                <span>{TRANSACTION_TYPE_LABELS[t.transaction_type] ?? t.transaction_type}</span>
+                                <span>{new Date(t.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </Card>

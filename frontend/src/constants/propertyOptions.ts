@@ -198,6 +198,38 @@ export const PAYMENT_METHODS = [
   { value: 'other', label: 'Other' },
 ]
 
+export const PAYMENT_METHOD_TYPES = [
+  { value: 'bank_transfer', label: 'Bank Transfer', description: 'Guests pay to one of your bank accounts and upload proof' },
+  { value: 'pay_at_property', label: 'Pay at Property', description: 'Guests settle on arrival, with an optional upfront deposit' },
+]
+
+export const DEPOSIT_TYPES = [
+  { value: 'fixed', label: 'Fixed Amount', description: 'A flat peso deposit' },
+  { value: 'percentage', label: 'Percentage', description: 'A percentage of the booking total' },
+]
+
+export const PAYMENT_RECORD_STATUSES = [
+  { value: 'pending', label: 'Pending', color: 'amber' },
+  { value: 'partially_paid', label: 'Partially Paid', color: 'amber' },
+  { value: 'paid', label: 'Paid', color: 'emerald' },
+  { value: 'failed', label: 'Failed', color: 'red' },
+  { value: 'refunded', label: 'Refunded', color: 'slate' },
+  { value: 'cancelled', label: 'Cancelled', color: 'slate' },
+]
+
+export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
+  payment_initiated: 'Payment Initiated',
+  payment_authorized: 'Payment Authorized',
+  payment_captured: 'Payment Captured',
+  deposit_received: 'Deposit Received',
+  manual_payment_recorded: 'Manual Payment Recorded',
+  payment_failed: 'Payment Failed',
+  payment_cancelled: 'Payment Cancelled',
+  refund_initiated: 'Refund Initiated',
+  refund_completed: 'Refund Completed',
+  webhook_received: 'Webhook Received',
+}
+
 export const LANGUAGES = [
   { value: 'en', label: 'English' },
   { value: 'fil', label: 'Filipino' },

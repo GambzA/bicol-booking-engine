@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.property_portal import (
-    Accommodation, Booking, BookingRoom, BookingStatus, GuestPayment, GuestPaymentStatus,
+    Accommodation, Booking, BookingRoom, BookingStatus, PaymentRecord, PaymentRecordStatus,
 )
 
 router = APIRouter(prefix="/dashboard", tags=["property-dashboard"])
@@ -110,9 +110,9 @@ async def get_dashboard(
     )
 
     outstanding_payments = (await db.execute(
-        select(func.coalesce(func.sum(GuestPayment.amount), 0)).where(
-            GuestPayment.hotel_id == hotel_id,
-            GuestPayment.status == GuestPaymentStatus.PENDING,
+        select(func.coalesce(func.sum(PaymentRecord.amount), 0)).where(
+            PaymentRecord.hotel_id == hotel_id,
+            PaymentRecord.status == PaymentRecordStatus.PENDING,
         )
     )).scalar() or Decimal("0.00")
 

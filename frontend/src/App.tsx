@@ -39,6 +39,9 @@ import { SettingsPage } from './pages/property/settings/SettingsPage'
 import { TaxesPage } from './pages/property/settings/taxes/TaxesPage'
 import { CreateTaxPage } from './pages/property/settings/taxes/CreateTaxPage'
 import { EditTaxPage } from './pages/property/settings/taxes/EditTaxPage'
+import { PaymentMethodsPage } from './pages/property/settings/payment-methods/PaymentMethodsPage'
+import { CreatePaymentMethodPage } from './pages/property/settings/payment-methods/CreatePaymentMethodPage'
+import { EditPaymentMethodPage } from './pages/property/settings/payment-methods/EditPaymentMethodPage'
 import { BookingsPage } from './pages/property/bookings/BookingsPage'
 import { CreateBookingPage } from './pages/property/bookings/CreateBookingPage'
 import { BookingDetailPage } from './pages/property/bookings/BookingDetailPage'
@@ -105,6 +108,9 @@ export default function App() {
           <Route path="/settings/taxes" element={<TaxesPage />} />
           <Route path="/settings/taxes/new" element={<CreateTaxPage />} />
           <Route path="/settings/taxes/:id/edit" element={<EditTaxPage />} />
+          <Route path="/settings/payment-methods" element={<PaymentMethodsPage />} />
+          <Route path="/settings/payment-methods/new" element={<CreatePaymentMethodPage />} />
+          <Route path="/settings/payment-methods/:id/edit" element={<EditPaymentMethodPage />} />
         </Route>
 
         {/* Admin public */}
