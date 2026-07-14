@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.property_portal import (
     Accommodation, AccommodationChildPolicy, AccommodationRateOverride,
-    AccommodationUnitAvailability, Booking, BookingRoom, BookingStatus,
+    Booking, BookingRoom, BookingStatus, InventoryAdjustment,
     RatePlan, RatePlanAccommodation, Promotion, PromotionAccommodation, PromotionRatePlan,
     Package, PackageAccommodation,
 )
@@ -367,9 +367,9 @@ async def count_available_units(
 ) -> int:
     """Minimum number of free units across every night of the stay.
 
-    free = num_units - manually-blocked units - units held by active bookings.
-    Each booked room occupies one unit, so overlapping ``BookingRoom`` rows are
-    counted (joined to their booking for status/dates).
+    free(date) = num_units + net inventory adjustment(date) - units held by
+    active bookings(date). Availability is accommodation-level and date-based;
+    each booked room occupies one unit. The night of check_out is not occupied.
     """
     # Rooms of this accommodation held by bookings overlapping the stay window.
     booking_q = (
@@ -387,24 +387,23 @@ async def count_available_units(
         booking_q = booking_q.where(Booking.id != exclude_booking_id)
     bookings = list((await db.execute(booking_q)).all())
 
-    # Manual unit blocks within the window.
-    blocks = list((await db.execute(
-        select(AccommodationUnitAvailability.date).where(
-            AccommodationUnitAvailability.accommodation_id == accommodation.id,
-            AccommodationUnitAvailability.is_available.is_(False),
-            AccommodationUnitAvailability.date >= check_in,
-            AccommodationUnitAvailability.date < check_out,
+    # Net signed inventory adjustments per night within the window.
+    adjustments = list((await db.execute(
+        select(InventoryAdjustment).where(
+            InventoryAdjustment.accommodation_id == accommodation.id,
+            InventoryAdjustment.deleted_at.is_(None),
+            InventoryAdjustment.start_date < check_out,
+            InventoryAdjustment.end_date >= check_in,
         )
-    )).all())
-    blocked_by_date: dict[date, int] = {}
-    for (bd,) in blocks:
-        blocked_by_date[bd] = blocked_by_date.get(bd, 0) + 1
+    )).scalars().all())
 
-    min_free = accommodation.num_units
+    min_free = None
     d = check_in
     while d < check_out:
         booked = sum(1 for b in bookings if b.check_in_date <= d < b.check_out_date)
-        free = accommodation.num_units - blocked_by_date.get(d, 0) - booked
-        min_free = min(min_free, free)
+        net_adj = sum(a.adjustment_value for a in adjustments if a.start_date <= d <= a.end_date)
+        sellable = max(0, accommodation.num_units + net_adj)
+        free = sellable - booked
+        min_free = free if min_free is None else min(min_free, free)
         d += timedelta(days=1)
-    return max(0, min_free)
+    return max(0, min_free if min_free is not None else accommodation.num_units)

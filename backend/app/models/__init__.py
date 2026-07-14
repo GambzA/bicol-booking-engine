@@ -13,6 +13,7 @@ from app.models.property_portal import (
     Tax, BookingTax,
     PaymentMethod, PaymentMethodBankAccount, PaymentTransaction,
     BillableItem, BillableItemAccommodation, BillableItemRatePlan, BookingBillableItem,
+    BookingCharge, InventoryAdjustment,
 )
 from app.models.reference import ReferenceCountry, ReferenceStateProvince, ReferenceCity
 
@@ -31,5 +32,6 @@ __all__ = [
     "Tax", "BookingTax",
     "PaymentMethod", "PaymentMethodBankAccount", "PaymentTransaction",
     "BillableItem", "BillableItemAccommodation", "BillableItemRatePlan", "BookingBillableItem",
+    "BookingCharge", "InventoryAdjustment",
     "ReferenceCountry", "ReferenceStateProvince", "ReferenceCity",
 ]

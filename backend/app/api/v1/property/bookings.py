@@ -15,7 +15,7 @@ from app.models.user import User
 from app.models.property_portal import (
     Accommodation, Guest, Booking, BookingRoom, BookingRoomGuest, BookingStatus, BookingSource,
     BookingNightlyRate, BookingStatusHistory, BookingTax, PaymentRecord, PaymentRecordStatus,
-    PaymentTransaction, PaymentMethod, BillableItem, BookingBillableItem,
+    PaymentTransaction, PaymentMethod, BillableItem, BookingBillableItem, BookingCharge,
     RatePlan, RatePlanAccommodation, Promotion, PromotionAccommodation, PromotionRatePlan,
     Package, PackageAccommodation,
 )
@@ -28,6 +28,15 @@ from app.services.billable_items import (
     compute_billable_item_line, load_eligible_items, taxable_total as billable_taxable_total,
     grand_total_of as billable_grand_total,
 )
+from app.services.payments import (
+    resolve_payment_method, record_payment as create_payment_record, payment_status as compute_payment_status,
+)
+from app.services.booking_charges import (
+    room_charge_rows, tax_charge_row, billable_item_charge_row, charges_total,
+    adjust_charge as adjust_charge_row, MANUAL_CATEGORIES, ADJUST_CATEGORIES,
+)
+from app.core.constants import AuditAction
+from app.services.audit_service import log_audit
 
 router = APIRouter(prefix="/bookings", tags=["property-bookings"])
 
@@ -99,44 +108,29 @@ class StatusUpdateBody(BaseModel):
 class PaymentBody(BaseModel):
     amount: Decimal = Field(gt=0)
     payment_date: Optional[date] = None
-    method: Optional[str] = None
-    payment_method_id: Optional[uuid.UUID] = None
+    payment_method_id: uuid.UUID
     reference_number: Optional[str] = None
     notes: Optional[str] = None
-    is_refund: bool = False
+
+
+class ManualChargeBody(BaseModel):
+    category: str
+    description: str
+    amount: Decimal = Field(gt=0)
+    notes: Optional[str] = None
+
+
+class AdjustChargeBody(BaseModel):
+    amount: Optional[Decimal] = Field(default=None, gt=0)
+    category: str = "adjustment"
+    description: Optional[str] = None
+    notes: Optional[str] = None
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 def _status_value(s) -> str:
     return s.value if hasattr(s, "value") else s
-
-
-def _payment_status(total: Decimal, paid: Decimal) -> str:
-    if paid <= 0:
-        return "unpaid"
-    if paid < total:
-        return "partially_paid"
-    return "paid"
-
-
-async def _resolve_payment_method(
-    db: AsyncSession, hotel_id: uuid.UUID, method_id: Optional[uuid.UUID], require_enabled: bool = True
-) -> Optional[PaymentMethod]:
-    if method_id is None:
-        return None
-    pm = (await db.execute(
-        select(PaymentMethod).where(
-            PaymentMethod.id == method_id,
-            PaymentMethod.hotel_id == hotel_id,
-            PaymentMethod.deleted_at.is_(None),
-        )
-    )).scalar_one_or_none()
-    if pm is None:
-        raise HTTPException(status_code=422, detail="Selected payment method is not available.")
-    if require_enabled and not pm.is_enabled:
-        raise HTTPException(status_code=422, detail="Selected payment method is not enabled.")
-    return pm
 
 
 def _compute_deposit(pm: PaymentMethod, total: Decimal) -> tuple[bool, Decimal]:
@@ -198,8 +192,10 @@ def _detail_options():
         selectinload(Booking.rooms).selectinload(BookingRoom.nightly_rates),
         selectinload(Booking.status_history),
         selectinload(Booking.payments).selectinload(PaymentRecord.transactions),
+        selectinload(Booking.payments).joinedload(PaymentRecord.recorded_by),
         selectinload(Booking.taxes),
         selectinload(Booking.billable_items),
+        selectinload(Booking.charges).joinedload(BookingCharge.created_by),
     )
 
 
@@ -250,6 +246,7 @@ def _serialize_transaction(t: PaymentTransaction) -> dict:
 def _serialize_payment(p: PaymentRecord) -> dict:
     return {
         "id": str(p.id),
+        "payment_number": p.payment_number,
         "amount": str(p.amount),
         "payment_date": p.payment_date.isoformat(),
         "method": p.method,
@@ -258,8 +255,29 @@ def _serialize_payment(p: PaymentRecord) -> dict:
         "reference_number": p.reference_number,
         "notes": p.notes,
         "status": _status_value(p.status),
+        "recorded_by_name": p.recorded_by.full_name if p.recorded_by else None,
+        "refunded_payment_id": str(p.refunded_payment_id) if p.refunded_payment_id else None,
         "created_at": p.created_at.isoformat(),
         "transactions": [_serialize_transaction(t) for t in p.transactions],
+    }
+
+
+def _serialize_charge(c: BookingCharge) -> dict:
+    return {
+        "id": str(c.id),
+        "booking_room_id": str(c.booking_room_id) if c.booking_room_id else None,
+        "category": c.category,
+        "description": c.description,
+        "quantity": c.quantity,
+        "unit_price": str(c.unit_price),
+        "amount": str(c.amount),
+        "charge_date": c.charge_date.isoformat(),
+        "source_type": c.source_type,
+        "source_id": str(c.source_id) if c.source_id else None,
+        "adjusts_charge_id": str(c.adjusts_charge_id) if c.adjusts_charge_id else None,
+        "created_by_name": c.created_by.full_name if c.created_by else None,
+        "notes": c.notes,
+        "created_at": c.created_at.isoformat(),
     }
 
 
@@ -317,13 +335,14 @@ def _serialize_detail(b: Booking) -> dict:
     primary_name = b.guest.full_name if b.guest else None
     rooms = list(b.rooms)
 
-    payments = [p for p in b.payments if _status_value(p.status) == "paid"]
+    net_paid_statuses = {"paid", "refunded"}
     total = Decimal(b.total_amount)
-    total_paid = sum((Decimal(p.amount) for p in payments), Decimal("0"))
-    deposit = Decimal(b.payments[0].amount) if b.payments else Decimal("0")
+    total_paid = money(sum((Decimal(p.amount) for p in b.payments if _status_value(p.status) in net_paid_statuses), Decimal("0")))
+    has_refund = any(_status_value(p.status) == "refunded" for p in b.payments)
+    # No floor at zero: a charge-side refund/adjustment can drop the total
+    # below what's already been paid, and the spec wants that surfaced as a
+    # negative Balance Due (a credit owed to the guest), not clamped to 0.
     outstanding = total - total_paid
-    if outstanding < 0:
-        outstanding = Decimal("0")
 
     def _sum(attr: str) -> Decimal:
         return sum((Decimal(getattr(r, attr)) for r in rooms), Decimal("0"))
@@ -388,14 +407,16 @@ def _serialize_detail(b: Booking) -> dict:
             }
             for i in b.billable_items
         ],
+        "charges": [_serialize_charge(c) for c in sorted(b.charges, key=lambda c: (c.display_order, c.created_at))],
         "total_amount": str(total),
         # payment summary
         "payment_summary": {
             "booking_total": str(total),
-            "deposit_paid": str(deposit),
+            "deposit_required": b.deposit_required,
+            "deposit_amount": str(b.deposit_amount),
             "total_paid": str(total_paid),
             "outstanding_balance": str(outstanding),
-            "payment_status": _payment_status(total, total_paid),
+            "payment_status": compute_payment_status(total, total_paid, has_refund),
         },
         "timeline": [
             {
@@ -585,10 +606,16 @@ async def list_bookings(
         select(func.coalesce(func.sum(PaymentRecord.amount), 0))
         .where(
             PaymentRecord.booking_id == Booking.id,
-            PaymentRecord.status == PaymentRecordStatus.PAID,
+            PaymentRecord.status.in_((PaymentRecordStatus.PAID, PaymentRecordStatus.REFUNDED)),
         )
         .correlate(Booking)
         .scalar_subquery()
+    )
+    has_refund_subq = exists(
+        select(PaymentRecord.id).where(
+            PaymentRecord.booking_id == Booking.id,
+            PaymentRecord.status == PaymentRecordStatus.REFUNDED,
+        )
     )
 
     base_where = [Booking.hotel_id == hotel_id, Booking.deleted_at.is_(None)]
@@ -600,12 +627,15 @@ async def list_bookings(
         base_where.append(Booking.check_in_date <= check_in_to)
     if payment_status == "unpaid":
         base_where.append(paid_subq <= 0)
+        base_where.append(~has_refund_subq)
     elif payment_status == "partially_paid":
         base_where.append(paid_subq > 0)
         base_where.append(paid_subq < Booking.total_amount)
     elif payment_status == "paid":
-        base_where.append(Booking.total_amount > 0)
         base_where.append(paid_subq >= Booking.total_amount)
+    elif payment_status == "refunded":
+        base_where.append(paid_subq <= 0)
+        base_where.append(has_refund_subq)
 
     if search:
         pattern = f"%{search.strip()}%"
@@ -623,7 +653,7 @@ async def list_bookings(
         search_clause = None
 
     q = (
-        select(Booking, paid_subq.label("total_paid"))
+        select(Booking, paid_subq.label("total_paid"), has_refund_subq.label("has_refund"))
         .join(Guest, Booking.guest_id == Guest.id)
         .options(
             joinedload(Booking.guest),
@@ -658,7 +688,7 @@ async def list_bookings(
     )).unique().all()
 
     items = []
-    for b, total_paid in rows:
+    for b, total_paid, has_refund in rows:
         total_paid = Decimal(str(total_paid or 0))
         booking_total = Decimal(b.total_amount)
         rooms = list(b.rooms)
@@ -677,7 +707,7 @@ async def list_bookings(
             "check_out_date": b.check_out_date.isoformat(),
             "nights": (b.check_out_date - b.check_in_date).days,
             "status": _status_value(b.status),
-            "payment_status": _payment_status(booking_total, total_paid),
+            "payment_status": compute_payment_status(booking_total, total_paid, bool(has_refund)),
             "total_amount": str(booking_total),
             "total_paid": str(total_paid),
             "booking_source": b.booking_source,
@@ -768,7 +798,7 @@ async def create_booking(
                 detail=f"Only {available} unit(s) of '{acc.name}' available for these dates; {need} requested.",
             )
 
-    payment_method = await _resolve_payment_method(db, hotel_id, body.payment_method_id)
+    payment_method = await resolve_payment_method(db, hotel_id, body.payment_method_id)
 
     booking_number = await _generate_booking_number(db)
     status = BookingStatus(body.status)
@@ -795,6 +825,9 @@ async def create_booking(
     total_adults = 0
     total_children = 0
     used_rate_plan_ids: set[uuid.UUID] = set()
+    all_charges: list[BookingCharge] = []
+    charge_order = 0
+    charge_date = date.today()
     for idx, r in enumerate(body.rooms):
         acc = acc_map[r.accommodation_id]
         adults = len(r.adults)
@@ -864,6 +897,12 @@ async def create_booking(
                 night_total=n.night_total,
             ))
 
+        for row in room_charge_rows(room, acc.name):
+            charge = BookingCharge(booking_id=b.id, charge_date=charge_date, display_order=charge_order, **row)
+            db.add(charge)
+            all_charges.append(charge)
+            charge_order += 1
+
         grand_total += q.total_amount
         total_guests += adults + len(children_ages)
         total_adults += adults
@@ -889,7 +928,7 @@ async def create_booking(
             item, bi.quantity, nights, total_guests, total_adults, total_children, net_subtotal,
         ))
     for order, line in enumerate(billable_lines):
-        db.add(BookingBillableItem(
+        bi_row = BookingBillableItem(
             booking_id=b.id,
             billable_item_id=line.billable_item_id,
             name_snapshot=line.name,
@@ -900,7 +939,16 @@ async def create_booking(
             is_taxable_snapshot=line.is_taxable,
             calculated_amount=line.amount,
             display_order=order,
-        ))
+        )
+        db.add(bi_row)
+        await db.flush()
+        charge = BookingCharge(
+            booking_id=b.id, charge_date=charge_date, display_order=charge_order,
+            **billable_item_charge_row(bi_row),
+        )
+        db.add(charge)
+        all_charges.append(charge)
+        charge_order += 1
     billable_items_total = billable_grand_total(billable_lines)
     taxable_billable = billable_taxable_total(billable_lines)
 
@@ -911,7 +959,7 @@ async def create_booking(
         active_taxes, taxable_base, nights, total_guests, total_adults, total_children
     )
     for order, line in enumerate(tax_lines):
-        db.add(BookingTax(
+        tax_row = BookingTax(
             booking_id=b.id,
             tax_id=line.tax_id,
             name_snapshot=line.name,
@@ -922,13 +970,22 @@ async def create_booking(
             calculated_amount=line.amount,
             is_included=line.is_included,
             display_order=order,
-        ))
+        )
+        db.add(tax_row)
+        await db.flush()
+        charge = BookingCharge(
+            booking_id=b.id, charge_date=charge_date, display_order=charge_order,
+            **tax_charge_row(tax_row),
+        )
+        db.add(charge)
+        all_charges.append(charge)
+        charge_order += 1
     tax_total = added_tax_total(tax_lines)
 
     b.subtotal_amount = net_subtotal
     b.billable_items_amount = billable_items_total
     b.tax_total = tax_total
-    b.total_amount = money(net_subtotal + billable_items_total + tax_total)
+    b.total_amount = charges_total(all_charges)
     b.num_guests = total_guests
 
     # Deposit snapshot from a pay-at-property method (over the tax-inclusive total).
@@ -993,36 +1050,16 @@ async def record_payment(
     user: User = Depends(get_current_user),
 ):
     b = await _get_or_404(db, booking_id, user.hotel_id)
-    # A payment method may be picked; not required (allows legacy free-text `method`).
-    pm = await _resolve_payment_method(db, user.hotel_id, body.payment_method_id, require_enabled=False)
-
-    record_status = PaymentRecordStatus.REFUNDED if body.is_refund else PaymentRecordStatus.PAID
-    record = PaymentRecord(
-        hotel_id=user.hotel_id,
-        booking_id=b.id,
-        amount=body.amount,
-        payment_date=body.payment_date or date.today(),
-        method=body.method,
-        payment_method_id=pm.id if pm else None,
-        payment_method_name_snapshot=pm.name if pm else body.method,
-        reference_number=body.reference_number,
-        notes=body.notes,
-        status=record_status,
+    record = await create_payment_record(
+        db, user.hotel_id, user.id, b,
+        body.payment_method_id, body.amount, body.payment_date,
+        body.reference_number, body.notes,
     )
-    db.add(record)
-    await db.flush()
-
-    # Immutable transaction event for this financial action (gateway-ready audit).
-    txn_type = "refund_completed" if body.is_refund else "manual_payment_recorded"
-    db.add(PaymentTransaction(
-        payment_record_id=record.id,
-        transaction_type=txn_type,
-        status=_status_value(record_status),
-        amount=body.amount,
-        reference_number=body.reference_number,
-        remarks=body.notes,
-    ))
-
+    await log_audit(
+        db, action=AuditAction.PAYMENT_CREATED, entity_type="payment_record", entity_id=str(record.id),
+        hotel_id=user.hotel_id, user_id=user.id,
+        after_state={"booking_id": str(b.id), "amount": str(body.amount)},
+    )
     await db.commit()
     return _serialize_detail(await _load_detail(db, booking_id))
 
@@ -1068,7 +1105,7 @@ async def add_billable_item(
     next_order = (await db.execute(
         select(func.count(BookingBillableItem.id)).where(BookingBillableItem.booking_id == b.id)
     )).scalar() or 0
-    db.add(BookingBillableItem(
+    bi_row = BookingBillableItem(
         booking_id=b.id,
         billable_item_id=line.billable_item_id,
         name_snapshot=line.name,
@@ -1079,10 +1116,106 @@ async def add_billable_item(
         is_taxable_snapshot=line.is_taxable,
         calculated_amount=line.amount,
         display_order=next_order,
-    ))
-    b.billable_items_amount = money(b.billable_items_amount + line.amount)
-    b.total_amount = money(b.total_amount + line.amount)
+    )
+    db.add(bi_row)
+    await db.flush()
 
+    next_charge_order = (await db.execute(
+        select(func.count(BookingCharge.id)).where(BookingCharge.booking_id == b.id)
+    )).scalar() or 0
+    charge = BookingCharge(
+        booking_id=b.id, charge_date=date.today(), display_order=next_charge_order,
+        **billable_item_charge_row(bi_row),
+    )
+    db.add(charge)
+
+    b.billable_items_amount = money(b.billable_items_amount + line.amount)
+    b.total_amount = money(b.total_amount + charge.amount)
+
+    await log_audit(
+        db, action=AuditAction.CHARGE_ADDED, entity_type="booking_charge", entity_id=None,
+        hotel_id=user.hotel_id, user_id=user.id,
+        after_state={"booking_id": str(b.id), "category": "billable_item", "amount": str(charge.amount)},
+    )
+    await db.commit()
+    return _serialize_detail(await _load_detail(db, booking_id))
+
+
+# ─── Manual charges + adjustments (Booking Charges ledger) ─────────────────
+
+@router.post("/{booking_id}/charges")
+async def add_manual_charge(
+    booking_id: uuid.UUID,
+    body: ManualChargeBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Manual, ad-hoc ledger entries (damage fee, cleaning fee, misc.) not
+    tied to a Billable Item catalog entry."""
+    if body.category not in MANUAL_CATEGORIES:
+        raise HTTPException(status_code=422, detail=f"category must be one of {sorted(MANUAL_CATEGORIES)}")
+    b = await _get_or_404(db, booking_id, user.hotel_id)
+
+    next_order = (await db.execute(
+        select(func.count(BookingCharge.id)).where(BookingCharge.booking_id == b.id)
+    )).scalar() or 0
+    amount = money(body.amount)
+    charge = BookingCharge(
+        booking_id=b.id,
+        category=body.category,
+        description=body.description.strip(),
+        quantity=1,
+        unit_price=amount,
+        amount=amount,
+        charge_date=date.today(),
+        created_by_user_id=user.id,
+        notes=body.notes,
+        display_order=next_order,
+    )
+    db.add(charge)
+    b.total_amount = money(b.total_amount + amount)
+
+    await log_audit(
+        db, action=AuditAction.CHARGE_ADDED, entity_type="booking_charge", entity_id=None,
+        hotel_id=user.hotel_id, user_id=user.id,
+        after_state={"booking_id": str(b.id), "category": body.category, "amount": str(amount)},
+    )
+    await db.commit()
+    return _serialize_detail(await _load_detail(db, booking_id))
+
+
+@router.post("/{booking_id}/charges/{charge_id}/adjust")
+async def adjust_booking_charge(
+    booking_id: uuid.UUID,
+    charge_id: uuid.UUID,
+    body: AdjustChargeBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Reduce or reverse an existing charge by posting a new negative-amount
+    row linked back to it via ``adjusts_charge_id`` -- the original charge is
+    never edited or deleted."""
+    b = await _get_or_404(db, booking_id, user.hotel_id)
+    original = (await db.execute(
+        select(BookingCharge).where(BookingCharge.id == charge_id, BookingCharge.booking_id == b.id)
+    )).scalar_one_or_none()
+    if original is None:
+        raise HTTPException(status_code=404, detail="Charge not found")
+
+    next_order = (await db.execute(
+        select(func.count(BookingCharge.id)).where(BookingCharge.booking_id == b.id)
+    )).scalar() or 0
+    charge = await adjust_charge_row(
+        db, user.id, original, body.amount, body.category, body.description, body.notes,
+        display_order=next_order,
+    )
+    b.total_amount = money(b.total_amount + charge.amount)
+
+    await log_audit(
+        db, action=AuditAction.CHARGE_ADJUSTED, entity_type="booking_charge", entity_id=str(charge.id),
+        hotel_id=user.hotel_id, user_id=user.id,
+        after_state={"adjusts_charge_id": str(original.id), "amount": str(charge.amount)},
+    )
     await db.commit()
     return _serialize_detail(await _load_detail(db, booking_id))
 

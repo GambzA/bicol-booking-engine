@@ -10,6 +10,7 @@ async def log_audit(
     entity_id: str | None = None,
     hotel_id: uuid.UUID | None = None,
     admin_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
     remarks: str | None = None,
     before_state: dict | None = None,
     after_state: dict | None = None,
@@ -17,6 +18,7 @@ async def log_audit(
 ) -> None:
     entry = AuditLog(
         admin_id=admin_id,
+        user_id=user_id,
         hotel_id=hotel_id,
         action=action,
         entity_type=entity_type,

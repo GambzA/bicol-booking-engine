@@ -32,7 +32,6 @@ export function CreateAccommodationPage() {
         extra_bed_fee: values.extra_bed_fee != null ? String(values.extra_bed_fee) : null,
         check_in_time: values.check_in_time || null,
         check_out_time: values.check_out_time || null,
-        unit_prefix: values.unit_prefix ?? null,
         amenities,
         images,
         child_policies: values.child_policies.map((p, i) => ({

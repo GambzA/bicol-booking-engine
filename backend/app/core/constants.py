@@ -22,6 +22,15 @@ class AuditAction:
 
     PAYMENT_RECORDED = "payment.recorded"
 
+    PAYMENT_CREATED = "payment_record.created"
+    PAYMENT_REFUNDED = "payment_record.refunded"
+
+    CHARGE_ADDED = "booking_charge.added"
+    CHARGE_ADJUSTED = "booking_charge.adjusted"
+
+    INVENTORY_ADJUSTED = "inventory_adjustment.saved"
+    INVENTORY_ADJUSTMENT_REMOVED = "inventory_adjustment.removed"
+
     COMMISSION_CALCULATED = "commission.calculated"
     COMMISSION_ADJUSTED = "commission.adjusted"
     COMMISSION_FINALIZED = "commission.finalized"

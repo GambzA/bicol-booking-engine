@@ -86,7 +86,8 @@ export interface BookingListResponse {
 
 export interface PaymentSummary {
   booking_total: string
-  deposit_paid: string
+  deposit_required: boolean
+  deposit_amount: string
   total_paid: string
   outstanding_balance: string
   payment_status: string
@@ -105,6 +106,7 @@ export interface PaymentTransaction {
 
 export interface BookingPayment {
   id: string
+  payment_number: string
   amount: string
   payment_date: string
   method: string | null
@@ -113,6 +115,8 @@ export interface BookingPayment {
   reference_number: string | null
   notes: string | null
   status: string
+  recorded_by_name: string | null
+  refunded_payment_id: string | null
   created_at: string
   transactions: PaymentTransaction[]
 }
@@ -186,6 +190,23 @@ export interface BookingBillableItemLine {
   amount: string
 }
 
+export interface BookingCharge {
+  id: string
+  booking_room_id: string | null
+  category: string
+  description: string
+  quantity: number
+  unit_price: string
+  amount: string
+  charge_date: string
+  source_type: string | null
+  source_id: string | null
+  adjusts_charge_id: string | null
+  created_by_name: string | null
+  notes: string | null
+  created_at: string
+}
+
 export interface BookingDetail {
   id: string
   booking_number: string
@@ -218,6 +239,7 @@ export interface BookingDetail {
   taxes: BookingTaxLine[]
   billable_items_amount: string
   billable_items: BookingBillableItemLine[]
+  charges: BookingCharge[]
   total_amount: string
   payment_summary: PaymentSummary
   timeline: TimelineEntry[]
@@ -294,17 +316,25 @@ export const bookingsApi = {
   addBillableItem: (id: string, data: BillableItemInput) =>
     api.post<BookingDetail>(`${BASE}/${id}/billable-items`, data),
 
+  addCharge: (id: string, data: { category: string; description: string; amount: string; notes?: string | null }) =>
+    api.post<BookingDetail>(`${BASE}/${id}/charges`, data),
+
+  adjustCharge: (id: string, chargeId: string, data: {
+    amount?: string | null
+    category?: 'adjustment' | 'refund'
+    description?: string | null
+    notes?: string | null
+  }) => api.post<BookingDetail>(`${BASE}/${id}/charges/${chargeId}/adjust`, data),
+
   updateStatus: (id: string, data: { status: string; note?: string | null }) =>
     api.patch<BookingDetail>(`${BASE}/${id}/status`, data),
 
   recordPayment: (id: string, data: {
     amount: string
     payment_date?: string | null
-    method?: string | null
-    payment_method_id?: string | null
+    payment_method_id: string
     reference_number?: string | null
     notes?: string | null
-    is_refund?: boolean
   }) => api.post<BookingDetail>(`${BASE}/${id}/payments`, data),
 
   delete: (id: string) => api.delete(`${BASE}/${id}`),

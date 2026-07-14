@@ -3,18 +3,20 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Plus } from 'lucide-react'
 import { bookingsApi, type BookingDetail, type BookingRoom } from '../../../api/property/bookings'
 import { paymentMethodsApi, type PaymentMethod } from '../../../api/property/paymentMethods'
+import { paymentsApi } from '../../../api/property/payments'
 import { billableItemsApi, type BillableItem } from '../../../api/property/billableItems'
 import {
-  BOOKING_STATUSES, BOOKING_SOURCES, PAYMENT_METHODS, ACCOMMODATION_TYPES,
-  PAYMENT_RECORD_STATUSES, TRANSACTION_TYPE_LABELS,
+  BOOKING_STATUSES, BOOKING_SOURCES, ACCOMMODATION_TYPES,
+  TRANSACTION_TYPE_LABELS,
   BILLABLE_ITEM_CATEGORIES, QUANTITY_INPUT_PRICING_TYPES,
+  MANUAL_CHARGE_CATEGORIES,
 } from '../../../constants/propertyOptions'
 import { Button } from '../../../components/common/Button'
 import { Input } from '../../../components/common/Input'
 import { Select } from '../../../components/common/Select'
 import { PageLoader } from '../../../components/common/PageLoader'
 import { useToast } from '../../../components/common/useToast'
-import { BookingStatusBadge, PaymentStatusBadge, PaymentRecordBadge } from '../../../components/property/BookingBadges'
+import { BookingStatusBadge, PaymentStatusBadge, PaymentRecordBadge, ChargeCategoryBadge } from '../../../components/property/BookingBadges'
 
 const ASSIGNABLE = BOOKING_STATUSES.map((s) => ({ value: s.value, label: s.label }))
 const SOURCE_LABELS: Record<string, string> = Object.fromEntries(BOOKING_SOURCES.map((s) => [s.value, s.label]))
@@ -134,6 +136,11 @@ export function BookingDetailPage() {
   const [savingPay, setSavingPay] = useState(false)
   const [methods, setMethods] = useState<PaymentMethod[]>([])
 
+  const [refundingId, setRefundingId] = useState<string | null>(null)
+  const [refundAmount, setRefundAmount] = useState('')
+  const [refundNotes, setRefundNotes] = useState('')
+  const [savingRefund, setSavingRefund] = useState(false)
+
   useEffect(() => {
     if (!id) return
     bookingsApi.get(id)
@@ -153,6 +160,19 @@ export function BookingDetailPage() {
   const [addItemId, setAddItemId] = useState('')
   const [addItemQty, setAddItemQty] = useState('1')
   const [savingItem, setSavingItem] = useState(false)
+
+  const [chargeOpen, setChargeOpen] = useState(false)
+  const [chargeCategory, setChargeCategory] = useState(MANUAL_CHARGE_CATEGORIES[0].value)
+  const [chargeDescription, setChargeDescription] = useState('')
+  const [chargeAmount, setChargeAmount] = useState('')
+  const [chargeNotes, setChargeNotes] = useState('')
+  const [savingCharge, setSavingCharge] = useState(false)
+
+  const [adjustingId, setAdjustingId] = useState<string | null>(null)
+  const [adjustAmount, setAdjustAmount] = useState('')
+  const [adjustCategory, setAdjustCategory] = useState<'adjustment' | 'refund'>('adjustment')
+  const [adjustNotes, setAdjustNotes] = useState('')
+  const [savingAdjust, setSavingAdjust] = useState(false)
 
   useEffect(() => {
     if (!booking || booking.rooms.length === 0) return
@@ -187,23 +207,41 @@ export function BookingDetailPage() {
     if (!id) return
     const val = parseFloat(payAmount)
     if (isNaN(val) || val <= 0) { toast.error('Enter a valid payment amount.'); return }
+    if (!payMethod) { toast.error('Select a payment method.'); return }
     setSavingPay(true)
-    const isConfigured = methods.some((m) => m.id === payMethod)
     try {
       const r = await bookingsApi.recordPayment(id, {
         amount: String(val),
-        payment_method_id: isConfigured ? payMethod : null,
-        method: isConfigured ? null : (payMethod || null),
+        payment_method_id: payMethod,
         reference_number: payRef || null,
       })
       setBooking(r.data)
-      setPayOpen(false); setPayAmount(''); setPayRef('')
+      setPayOpen(false); setPayAmount(''); setPayRef(''); setPayMethod('')
       toast.success('Payment recorded.')
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       toast.error(detail ?? 'Failed to record payment.')
     }
     setSavingPay(false)
+  }
+
+  const handleRefund = async (paymentId: string) => {
+    if (!id) return
+    setSavingRefund(true)
+    try {
+      await paymentsApi.refund(paymentId, {
+        amount: refundAmount || null,
+        notes: refundNotes || null,
+      })
+      const r = await bookingsApi.get(id)
+      setBooking(r.data)
+      setRefundingId(null); setRefundAmount(''); setRefundNotes('')
+      toast.success('Refund recorded.')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Failed to record refund.')
+    }
+    setSavingRefund(false)
   }
 
   const handleAddItem = async () => {
@@ -224,6 +262,48 @@ export function BookingDetailPage() {
       toast.error(typeof detail === 'string' ? detail : 'Failed to add item.')
     }
     setSavingItem(false)
+  }
+
+  const handleAddCharge = async () => {
+    if (!id) return
+    const val = parseFloat(chargeAmount)
+    if (isNaN(val) || val <= 0) { toast.error('Enter a valid charge amount.'); return }
+    if (!chargeDescription.trim()) { toast.error('Enter a description.'); return }
+    setSavingCharge(true)
+    try {
+      const r = await bookingsApi.addCharge(id, {
+        category: chargeCategory,
+        description: chargeDescription.trim(),
+        amount: String(val),
+        notes: chargeNotes || null,
+      })
+      setBooking(r.data)
+      setChargeOpen(false); setChargeDescription(''); setChargeAmount(''); setChargeNotes('')
+      toast.success('Charge added.')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(typeof detail === 'string' ? detail : 'Failed to add charge.')
+    }
+    setSavingCharge(false)
+  }
+
+  const handleAdjustCharge = async (chargeId: string) => {
+    if (!id) return
+    setSavingAdjust(true)
+    try {
+      const r = await bookingsApi.adjustCharge(id, chargeId, {
+        amount: adjustAmount || null,
+        category: adjustCategory,
+        notes: adjustNotes || null,
+      })
+      setBooking(r.data)
+      setAdjustingId(null); setAdjustAmount(''); setAdjustNotes(''); setAdjustCategory('adjustment')
+      toast.success('Charge adjusted.')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(typeof detail === 'string' ? detail : 'Failed to adjust charge.')
+    }
+    setSavingAdjust(false)
   }
 
   if (loading) return <PageLoader />
@@ -351,6 +431,99 @@ export function BookingDetailPage() {
               </div>
             </Card>
 
+            <Card
+              title="Booking Ledger"
+              action={
+                <button onClick={() => setChargeOpen((o) => !o)} className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900">
+                  <Plus size={14} /> Add Charge
+                </button>
+              }
+            >
+              <div className="space-y-0.5">
+                {booking.charges.map((c) => {
+                  const isNegative = parseFloat(c.amount) < 0
+                  const reducedBy = booking.charges
+                    .filter((x) => x.adjusts_charge_id === c.id)
+                    .reduce((sum, x) => sum + parseFloat(x.amount), 0)
+                  const remaining = parseFloat(c.amount) + reducedBy
+                  const adjustable = !isNegative && c.category !== 'adjustment' && c.category !== 'refund' && remaining > 0.001
+                  return (
+                    <div key={c.id} className="border-b border-slate-50 py-2 last:border-0">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <ChargeCategoryBadge category={c.category} />
+                            <span className="truncate text-slate-700">{c.description}</span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            {fmtDate(c.charge_date)}
+                            {c.quantity > 1 ? ` · ×${c.quantity}` : ''}
+                            {c.created_by_name ? ` · by ${c.created_by_name}` : ''}
+                          </p>
+                        </div>
+                        <span className={`whitespace-nowrap font-medium ${isNegative ? 'text-red-600' : 'text-slate-800'}`}>
+                          {isNegative ? '-' : ''}&#8369;{money(c.amount.replace('-', ''))}
+                        </span>
+                      </div>
+                      {adjustable && (
+                        adjustingId === c.id ? (
+                          <div className="mt-2 space-y-2 rounded-lg bg-slate-50 p-2.5">
+                            <Select
+                              options={[
+                                { value: 'adjustment', label: 'Adjustment' },
+                                { value: 'refund', label: 'Refund' },
+                              ]}
+                              value={adjustCategory}
+                              onChange={(e) => setAdjustCategory(e.target.value as 'adjustment' | 'refund')}
+                            />
+                            <Input
+                              type="number" min="0.01" step="0.01"
+                              placeholder={`Amount (blank = full ₱${money(String(remaining))})`}
+                              value={adjustAmount}
+                              onChange={(e) => setAdjustAmount(e.target.value)}
+                            />
+                            <Input placeholder="Notes (optional)" value={adjustNotes} onChange={(e) => setAdjustNotes(e.target.value)} />
+                            <div className="flex gap-2">
+                              <Button
+                                variant="secondary" className="flex-1"
+                                onClick={() => { setAdjustingId(null); setAdjustAmount(''); setAdjustNotes(''); setAdjustCategory('adjustment') }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button className="flex-1" onClick={() => handleAdjustCharge(c.id)} loading={savingAdjust}>Confirm</Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={() => setAdjustingId(c.id)} className="mt-1 text-xs font-medium text-red-600 hover:text-red-800">
+                            Adjust / Refund
+                          </button>
+                        )
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {chargeOpen && (
+                <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                  <Select
+                    options={MANUAL_CHARGE_CATEGORIES}
+                    value={chargeCategory}
+                    onChange={(e) => setChargeCategory(e.target.value)}
+                  />
+                  <Input placeholder="Description" value={chargeDescription} onChange={(e) => setChargeDescription(e.target.value)} />
+                  <Input type="number" min="0.01" step="0.01" placeholder="Amount" value={chargeAmount} onChange={(e) => setChargeAmount(e.target.value)} />
+                  <Input placeholder="Notes (optional)" value={chargeNotes} onChange={(e) => setChargeNotes(e.target.value)} />
+                  <Button className="w-full" onClick={handleAddCharge} loading={savingCharge}>Add Charge</Button>
+                </div>
+              )}
+
+              <div className="mt-3 flex justify-between border-t border-slate-200 pt-2 text-base font-bold text-slate-900">
+                <span>Total</span>
+                <span>&#8369;{money(booking.total_amount)}</span>
+              </div>
+            </Card>
+
             <Card title="Timeline">
               <ol className="space-y-3">
                 {booking.timeline.map((t) => (
@@ -405,7 +578,14 @@ export function BookingDetailPage() {
               {booking.deposit_required && <Row label="Deposit Required" value={`₱${money(booking.deposit_amount)}`} />}
               <Row label="Booking Total" value={`₱${money(ps.booking_total)}`} />
               <Row label="Total Paid" value={`₱${money(ps.total_paid)}`} />
-              <Row label="Outstanding" value={`₱${money(ps.outstanding_balance)}`} />
+              <Row
+                label={parseFloat(ps.outstanding_balance) < 0 ? 'Credit' : 'Outstanding'}
+                value={
+                  <span className={parseFloat(ps.outstanding_balance) < 0 ? 'text-emerald-600' : undefined}>
+                    ₱{money(ps.outstanding_balance.replace('-', ''))}
+                  </span>
+                }
+              />
               <div className="mt-2 flex justify-between border-t border-slate-100 pt-2 text-sm">
                 <span className="text-slate-500">Status</span>
                 <PaymentStatusBadge status={ps.payment_status} />
@@ -415,16 +595,15 @@ export function BookingDetailPage() {
                 <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
                   <Input type="number" min="0.01" step="0.01" placeholder="Amount" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
                   <Select
-                    options={
-                      methods.length > 0
-                        ? [{ value: '', label: 'Select a method...' }, ...methods.map((m) => ({ value: m.id, label: m.name }))]
-                        : PAYMENT_METHODS
-                    }
+                    options={[
+                      { value: '', label: methods.length > 0 ? 'Select a method...' : 'No enabled payment methods' },
+                      ...methods.map((m) => ({ value: m.id, label: m.name })),
+                    ]}
                     value={payMethod}
                     onChange={(e) => setPayMethod(e.target.value)}
                   />
                   <Input placeholder="Reference # (optional)" value={payRef} onChange={(e) => setPayRef(e.target.value)} />
-                  <Button className="w-full" onClick={handleRecordPayment} loading={savingPay}>Record Payment</Button>
+                  <Button className="w-full" onClick={handleRecordPayment} loading={savingPay} disabled={!payMethod || !payAmount}>Record Payment</Button>
                 </div>
               )}
 
@@ -432,31 +611,66 @@ export function BookingDetailPage() {
                 <div className="mt-4 border-t border-slate-100 pt-3">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Payment Records</p>
                   <div className="space-y-2">
-                    {booking.payments.map((p) => (
-                      <div key={p.id} className="rounded-lg border border-slate-100 p-2.5">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-slate-500">
-                            {new Date(p.payment_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
-                            {' · '}{p.payment_method_name ?? p.method ?? '--'}
-                          </span>
-                          <span className="font-medium text-slate-800">&#8369;{money(p.amount)}</span>
-                        </div>
-                        <div className="mt-1 flex items-center justify-between">
-                          <PaymentRecordBadge status={p.status} />
-                          {p.reference_number && <span className="text-xs text-slate-400">Ref: {p.reference_number}</span>}
-                        </div>
-                        {p.transactions.length > 0 && (
-                          <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-                            {p.transactions.map((t) => (
-                              <div key={t.id} className="flex items-center justify-between text-xs text-slate-400">
-                                <span>{TRANSACTION_TYPE_LABELS[t.transaction_type] ?? t.transaction_type}</span>
-                                <span>{new Date(t.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}</span>
-                              </div>
-                            ))}
+                    {booking.payments.map((p) => {
+                      const isRefund = parseFloat(p.amount) < 0
+                      return (
+                        <div key={p.id} className="rounded-lg border border-slate-100 p-2.5">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500">
+                              {p.payment_number}
+                              {' · '}{new Date(p.payment_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                              {' · '}{p.payment_method_name ?? p.method ?? '--'}
+                            </span>
+                            <span className={`font-medium ${isRefund ? 'text-red-600' : 'text-slate-800'}`}>&#8369;{money(p.amount)}</span>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          <div className="mt-1 flex items-center justify-between">
+                            <PaymentRecordBadge status={p.status} />
+                            <div className="flex items-center gap-2 text-xs text-slate-400">
+                              {p.reference_number && <span>Ref: {p.reference_number}</span>}
+                              {p.recorded_by_name && <span>by {p.recorded_by_name}</span>}
+                            </div>
+                          </div>
+                          {p.transactions.length > 0 && (
+                            <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                              {p.transactions.map((t) => (
+                                <div key={t.id} className="flex items-center justify-between text-xs text-slate-400">
+                                  <span>{TRANSACTION_TYPE_LABELS[t.transaction_type] ?? t.transaction_type}</span>
+                                  <span>{new Date(t.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {!isRefund && p.status === 'paid' && (
+                            <div className="mt-2 border-t border-slate-100 pt-2">
+                              {refundingId === p.id ? (
+                                <div className="space-y-2">
+                                  <Input
+                                    type="number" min="0.01" step="0.01"
+                                    placeholder="Amount (blank = full remaining)"
+                                    value={refundAmount}
+                                    onChange={(e) => setRefundAmount(e.target.value)}
+                                  />
+                                  <Input placeholder="Notes (optional)" value={refundNotes} onChange={(e) => setRefundNotes(e.target.value)} />
+                                  <div className="flex gap-2">
+                                    <Button
+                                      variant="secondary" className="flex-1"
+                                      onClick={() => { setRefundingId(null); setRefundAmount(''); setRefundNotes('') }}
+                                    >
+                                      Cancel
+                                    </Button>
+                                    <Button className="flex-1" onClick={() => handleRefund(p.id)} loading={savingRefund}>Confirm Refund</Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button onClick={() => setRefundingId(p.id)} className="text-xs font-medium text-red-600 hover:text-red-800">
+                                  Refund
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}

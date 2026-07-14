@@ -19,7 +19,6 @@ export function EditAccommodationPage() {
       .get(id)
       .then((r) => setDefaults({
         ...r.data,
-        unit_prefix: r.data.unit_prefix ?? undefined,
         child_policies: r.data.child_policies.map((p) => ({
           min_age: p.min_age,
           max_age: p.max_age,
@@ -56,7 +55,6 @@ export function EditAccommodationPage() {
         extra_bed_fee: values.extra_bed_fee != null ? String(values.extra_bed_fee) : null,
         check_in_time: values.check_in_time || null,
         check_out_time: values.check_out_time || null,
-        unit_prefix: values.unit_prefix ?? null,
         amenities,
         images,
         child_policies: values.child_policies.map((p, i) => ({

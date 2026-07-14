@@ -12,6 +12,7 @@ from app.models.base import TimestampMixin
 if TYPE_CHECKING:
     from app.models.hotel import Hotel
     from app.models.reference import ReferenceCountry
+    from app.models.user import User
 
 
 class Promotion(TimestampMixin, Base):
@@ -144,7 +145,6 @@ class Accommodation(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     check_in_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     check_out_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    unit_prefix: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     amenities: Mapped[Optional[list[Any]]] = mapped_column(JSONB, nullable=True)
     images: Mapped[Optional[list[Any]]] = mapped_column(JSONB, nullable=True)
 
@@ -176,24 +176,30 @@ class AccommodationChildPolicy(Base):
     accommodation: Mapped["Accommodation"] = relationship("Accommodation", back_populates="child_policies")
 
 
-class AccommodationUnitAvailability(Base):
-    __tablename__ = "accommodation_unit_availability"
+class InventoryAdjustment(TimestampMixin, Base):
+    """A signed, accommodation-level adjustment to sellable inventory over a
+    date range (maintenance, renovation, event holds, overbooking buffers, ...).
+    Availability is managed only at the accommodation level -- never per unit.
+    Per-date sellable = num_units + sum(adjustment_value of rows covering that
+    date). Hard-deletable operational config (not immutable financial history)."""
+    __tablename__ = "inventory_adjustments"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
     accommodation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("accommodations.id", ondelete="CASCADE"), nullable=False
     )
-    unit_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    date: Mapped[date] = mapped_column(Date, nullable=False)
-    is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    adjustment_value: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(String(30), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
-    __table_args__ = (
-        UniqueConstraint("accommodation_id", "unit_number", "date", name="uq_unit_availability"),
-    )
+    accommodation: Mapped["Accommodation"] = relationship("Accommodation")
+    created_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by_user_id])
 
 
 class AccommodationRateOverride(Base):
@@ -417,6 +423,10 @@ class Booking(TimestampMixin, Base):
         "BookingBillableItem", back_populates="booking",
         cascade="all, delete-orphan", order_by="BookingBillableItem.display_order",
     )
+    charges: Mapped[list["BookingCharge"]] = relationship(
+        "BookingCharge", back_populates="booking", foreign_keys="BookingCharge.booking_id",
+        cascade="all, delete-orphan", order_by="BookingCharge.display_order",
+    )
 
 
 class BookingRoom(TimestampMixin, Base):
@@ -493,6 +503,7 @@ class PaymentRecord(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hotel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
     booking_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("bookings.id"), nullable=True)
+    payment_number: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     payment_date: Mapped[date] = mapped_column(Date, nullable=False)
     method: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # legacy free-text label
@@ -506,11 +517,24 @@ class PaymentRecord(Base):
         SQLEnum(PaymentRecordStatus, name="paymentrecordstatus", create_type=False, values_callable=lambda x: [e.value for e in x]),
         nullable=False, server_default="pending",
     )
+    recorded_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    refunded_payment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("payment_records.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     hotel: Mapped["Hotel"] = relationship("Hotel")
     booking: Mapped[Optional["Booking"]] = relationship("Booking", back_populates="payments")
     payment_method: Mapped[Optional["PaymentMethod"]] = relationship("PaymentMethod")
+    recorded_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[recorded_by_user_id])
+    refunded_payment: Mapped[Optional["PaymentRecord"]] = relationship(
+        "PaymentRecord", remote_side=[id], foreign_keys=[refunded_payment_id], back_populates="refunds"
+    )
+    refunds: Mapped[list["PaymentRecord"]] = relationship(
+        "PaymentRecord", back_populates="refunded_payment", foreign_keys=[refunded_payment_id],
+    )
     transactions: Mapped[list["PaymentTransaction"]] = relationship(
         "PaymentTransaction", back_populates="record",
         cascade="all, delete-orphan", order_by="PaymentTransaction.created_at",
@@ -772,3 +796,47 @@ class BookingBillableItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     booking: Mapped["Booking"] = relationship("Booking", back_populates="billable_items")
+
+
+class BookingCharge(Base):
+    """Immutable ledger entry for one dollar amount on a booking (the Folio).
+    Auto-generated at booking creation from room/tax/billable-item lines, or
+    added manually; adjustments and refunds are new negative-amount rows
+    linked back to the original via ``adjusts_charge_id`` -- the original
+    charge is never edited or deleted."""
+    __tablename__ = "booking_charges"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    booking_room_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("booking_rooms.id", ondelete="SET NULL"), nullable=True
+    )
+    category: Mapped[str] = mapped_column(String(30), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default="0.00")
+    charge_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    adjusts_charge_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("booking_charges.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    booking: Mapped["Booking"] = relationship("Booking", back_populates="charges", foreign_keys=[booking_id])
+    booking_room: Mapped[Optional["BookingRoom"]] = relationship("BookingRoom")
+    created_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by_user_id])
+    adjusts_charge: Mapped[Optional["BookingCharge"]] = relationship(
+        "BookingCharge", remote_side=[id], foreign_keys=[adjusts_charge_id], back_populates="adjustments"
+    )
+    adjustments: Mapped[list["BookingCharge"]] = relationship(
+        "BookingCharge", back_populates="adjusts_charge", foreign_keys=[adjusts_charge_id],
+    )

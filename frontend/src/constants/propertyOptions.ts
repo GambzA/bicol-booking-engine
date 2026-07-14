@@ -177,6 +177,7 @@ export const BOOKING_PAYMENT_STATUSES = [
   { value: 'unpaid', label: 'Unpaid', color: 'red' },
   { value: 'partially_paid', label: 'Partially Paid', color: 'amber' },
   { value: 'paid', label: 'Paid', color: 'emerald' },
+  { value: 'refunded', label: 'Refunded', color: 'slate' },
 ]
 
 export const BOOKING_SOURCES = [
@@ -187,15 +188,6 @@ export const BOOKING_SOURCES = [
   { value: 'facebook', label: 'Facebook' },
   { value: 'ota', label: 'OTA' },
   { value: 'manual', label: 'Manual' },
-]
-
-export const PAYMENT_METHODS = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'card', label: 'Credit/Debit Card' },
-  { value: 'bank_transfer', label: 'Bank Transfer' },
-  { value: 'gcash', label: 'GCash' },
-  { value: 'maya', label: 'Maya' },
-  { value: 'other', label: 'Other' },
 ]
 
 export const PAYMENT_METHOD_TYPES = [
@@ -215,6 +207,37 @@ export const PAYMENT_RECORD_STATUSES = [
   { value: 'failed', label: 'Failed', color: 'red' },
   { value: 'refunded', label: 'Refunded', color: 'slate' },
   { value: 'cancelled', label: 'Cancelled', color: 'slate' },
+]
+
+export const BOOKING_CHARGE_CATEGORIES = [
+  { value: 'accommodation', label: 'Accommodation', color: 'slate' },
+  { value: 'rate_plan', label: 'Rate Plan', color: 'slate' },
+  { value: 'package', label: 'Package', color: 'blue' },
+  { value: 'billable_item', label: 'Billable Item', color: 'blue' },
+  { value: 'extra_adult', label: 'Extra Adult', color: 'slate' },
+  { value: 'child_charge', label: 'Child Charge', color: 'slate' },
+  { value: 'tax', label: 'Tax', color: 'amber' },
+  { value: 'promotion', label: 'Promotion', color: 'emerald' },
+  { value: 'discount', label: 'Discount', color: 'emerald' },
+  { value: 'adjustment', label: 'Adjustment', color: 'red' },
+  { value: 'refund', label: 'Refund', color: 'red' },
+  { value: 'damage_fee', label: 'Damage Fee', color: 'red' },
+  { value: 'miscellaneous', label: 'Miscellaneous', color: 'slate' },
+]
+
+// What the manual "Add Charge" form offers -- everything else is system-generated.
+export const MANUAL_CHARGE_CATEGORIES = [
+  { value: 'damage_fee', label: 'Damage Fee' },
+  { value: 'miscellaneous', label: 'Miscellaneous' },
+]
+
+export const INVENTORY_ADJUSTMENT_REASONS = [
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'renovation', label: 'Renovation' },
+  { value: 'operational', label: 'Operational' },
+  { value: 'event_hold', label: 'Event Hold' },
+  { value: 'overbooking_buffer', label: 'Overbooking Buffer' },
+  { value: 'other', label: 'Other' },
 ]
 
 export const TRANSACTION_TYPE_LABELS: Record<string, string> = {

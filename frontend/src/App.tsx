@@ -9,7 +9,7 @@ import { PropertyDashboard } from './pages/property/PropertyDashboard'
 import { AccommodationsPage } from './pages/property/accommodations/AccommodationsPage'
 import { CreateAccommodationPage } from './pages/property/accommodations/CreateAccommodationPage'
 import { EditAccommodationPage } from './pages/property/accommodations/EditAccommodationPage'
-import { AvailabilityPage } from './pages/property/accommodations/AvailabilityPage'
+import { InventoryPage } from './pages/property/accommodations/InventoryPage'
 import { RateCalendarPage } from './pages/property/accommodations/RateCalendarPage'
 import { AdminLogin } from './pages/admin/AdminLogin'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
@@ -48,6 +48,8 @@ import { EditPaymentMethodPage } from './pages/property/settings/payment-methods
 import { BookingsPage } from './pages/property/bookings/BookingsPage'
 import { CreateBookingPage } from './pages/property/bookings/CreateBookingPage'
 import { BookingDetailPage } from './pages/property/bookings/BookingDetailPage'
+import { PaymentsPage as PropertyPaymentsPage } from './pages/property/payments/PaymentsPage'
+import { PaymentDetailPage } from './pages/property/payments/PaymentDetailPage'
 import { GuestsPage } from './pages/property/guests/GuestsPage'
 import { CreateGuestPage } from './pages/property/guests/CreateGuestPage'
 import { EditGuestPage } from './pages/property/guests/EditGuestPage'
@@ -88,7 +90,7 @@ export default function App() {
           <Route path="/dashboard" element={<PropertyDashboard />} />
           <Route path="/accommodations" element={<AccommodationsPage />} />
           <Route path="/accommodations/new" element={<CreateAccommodationPage />} />
-          <Route path="/accommodations/availability" element={<AvailabilityPage />} />
+          <Route path="/accommodations/inventory" element={<InventoryPage />} />
           <Route path="/accommodations/rate-calendar" element={<RateCalendarPage />} />
           <Route path="/accommodations/:id/edit" element={<EditAccommodationPage />} />
           <Route path="/rate-plans" element={<RatePlansPage />} />
@@ -106,6 +108,8 @@ export default function App() {
           <Route path="/bookings" element={<BookingsPage />} />
           <Route path="/bookings/new" element={<CreateBookingPage />} />
           <Route path="/bookings/:id" element={<BookingDetailPage />} />
+          <Route path="/payments" element={<PropertyPaymentsPage />} />
+          <Route path="/payments/:id" element={<PaymentDetailPage />} />
           <Route path="/guests" element={<GuestsPage />} />
           <Route path="/guests/new" element={<CreateGuestPage />} />
           <Route path="/guests/:id" element={<GuestProfilePage />} />

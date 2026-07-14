@@ -42,7 +42,6 @@ export interface AccommodationFormValues {
   max_occupancy: number
   max_adults: number | null
   max_children: number | null
-  unit_prefix: number | null
   base_rate: number
   weekend_rate: number | null
   check_in_time: string
@@ -62,7 +61,6 @@ export interface AccommodationFormDefaults {
   max_occupancy?: number
   max_adults?: number | null
   max_children?: number | null
-  unit_prefix?: number | null
   base_rate?: number | string
   weekend_rate?: number | string | null
   check_in_time?: string
@@ -101,7 +99,6 @@ const schema = z.object({
   max_occupancy: z.coerce.number().int().min(1, 'At least 1 guest'),
   max_adults: z.coerce.number().int().min(0).nullable().optional(),
   max_children: z.coerce.number().int().min(0).nullable().optional(),
-  unit_prefix: z.coerce.number().int().min(0).nullable().optional(),
   base_rate: z.coerce.number().min(0, 'Base rate is required'),
   weekend_rate: z.coerce.number().min(0).nullable().optional(),
   check_in_time: z.string().optional().default(''),
@@ -458,7 +455,6 @@ export function AccommodationForm({ mode, defaults, onSubmit, saving }: Accommod
       max_occupancy: defaults?.max_occupancy ?? 2,
       max_adults: defaults?.max_adults ?? undefined,
       max_children: defaults?.max_children ?? undefined,
-      unit_prefix: defaults?.unit_prefix ?? undefined,
       base_rate: defaults?.base_rate != null ? Number(defaults.base_rate) : undefined,
       weekend_rate: defaults?.weekend_rate != null ? Number(defaults.weekend_rate) : undefined,
       check_in_time: defaults?.check_in_time ?? '14:00',
@@ -583,33 +579,6 @@ export function AccommodationForm({ mode, defaults, onSubmit, saving }: Accommod
                 {...register('max_children')}
                 placeholder="Optional"
               />
-            </Field>
-            <Field label="Room Number Prefix">
-              <Input
-                type="number"
-                min={0}
-                {...register('unit_prefix')}
-                placeholder="Optional (e.g. 1 for floor 1)"
-              />
-              {(() => {
-                const prefix = watch('unit_prefix')
-                const units = watch('num_units')
-                if (prefix == null || prefix === 0 && !watch('unit_prefix')) return (
-                  <p className="mt-1 text-xs text-slate-400">
-                    When set, units are labeled Room {'{prefix}'}00, {'{prefix}'}01, etc.
-                  </p>
-                )
-                const count = Math.min(Number(units) || 1, 5)
-                const labels = Array.from({ length: count }, (_, i) =>
-                  `Room ${Number(prefix) * 100 + i}`
-                )
-                const more = Number(units) > 5 ? ` ... Room ${Number(prefix) * 100 + Number(units) - 1}` : ''
-                return (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Units will be: <span className="font-medium">{labels.join(', ')}{more}</span>
-                  </p>
-                )
-              })()}
             </Field>
           </div>
         </SectionCard>

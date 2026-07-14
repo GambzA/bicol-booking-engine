@@ -49,7 +49,7 @@ export function PropertyLayout() {
 
   const isManagementActive =
     isOnAccommodations &&
-    !location.pathname.startsWith('/accommodations/availability') &&
+    !location.pathname.startsWith('/accommodations/inventory') &&
     !location.pathname.startsWith('/accommodations/rate-calendar')
 
   return (
@@ -96,11 +96,11 @@ export function PropertyLayout() {
                 Management
               </NavLink>
               <NavLink
-                to="/accommodations/availability"
+                to="/accommodations/inventory"
                 className={({ isActive }) => NAV_ITEM_CLASS(isActive)}
               >
                 <CalendarDays size={14} />
-                Availability
+                Inventory
               </NavLink>
               <NavLink
                 to="/accommodations/rate-calendar"

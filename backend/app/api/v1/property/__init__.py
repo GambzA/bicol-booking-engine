@@ -10,6 +10,8 @@ from app.api.v1.property.payment_methods import router as payment_methods_router
 from app.api.v1.property.billable_items import router as billable_items_router
 from app.api.v1.property.bookings import router as bookings_router
 from app.api.v1.property.guests import router as guests_router
+from app.api.v1.property.payments import router as payments_router
+from app.api.v1.property.inventory import router as inventory_router
 
 router = APIRouter(prefix="/property")
 router.include_router(dashboard_router)
@@ -23,3 +25,5 @@ router.include_router(payment_methods_router)
 router.include_router(billable_items_router)
 router.include_router(bookings_router)
 router.include_router(guests_router)
+router.include_router(payments_router)
+router.include_router(inventory_router)

@@ -37,7 +37,6 @@ export interface Accommodation {
   is_active: boolean
   check_in_time: string | null
   check_out_time: string | null
-  unit_prefix: number | null
   amenities: AmenityItem[]
   images: AccommodationImage[]
   child_policies: ChildPolicy[]
@@ -50,42 +49,6 @@ export interface AccommodationListResponse {
   total: number
   page: number
   pages: number
-}
-
-export interface AvailabilityDay {
-  booked: number
-  available: number
-}
-
-export interface AccommodationAvailability {
-  id: string
-  name: string
-  accommodation_type: string
-  num_units: number
-  availability: Record<string, AvailabilityDay>
-}
-
-export interface AvailabilityResponse {
-  start_date: string
-  end_date: string
-  dates: string[]
-  accommodations: AccommodationAvailability[]
-}
-
-export interface UnitAvailabilityRow {
-  unit_number: number
-  availability: Record<string, boolean>
-}
-
-export interface UnitAvailabilityResponse {
-  accommodation_id: string
-  name: string
-  num_units: number
-  unit_prefix: number | null
-  start_date: string
-  end_date: string
-  dates: string[]
-  units: UnitAvailabilityRow[]
 }
 
 export interface RateCalendarResponse {
@@ -129,7 +92,6 @@ export const accommodationsApi = {
     extra_bed_fee?: string | null
     check_in_time?: string | null
     check_out_time?: string | null
-    unit_prefix?: number | null
     amenities?: AmenityItem[]
     images?: AccommodationImage[]
     child_policies?: Omit<ChildPolicy, 'id'>[]
@@ -151,7 +113,6 @@ export const accommodationsApi = {
     extra_bed_fee: string | null
     check_in_time: string | null
     check_out_time: string | null
-    unit_prefix: number | null
     amenities: AmenityItem[]
     images: AccommodationImage[]
     child_policies: Omit<ChildPolicy, 'id'>[]
@@ -160,17 +121,6 @@ export const accommodationsApi = {
   toggleActive: (id: string) => api.patch<Accommodation>(`${BASE}/${id}/toggle`),
 
   delete: (id: string) => api.delete(`${BASE}/${id}`),
-
-  availability: (params?: { start_date?: string; end_date?: string }) =>
-    api.get<AvailabilityResponse>(`${BASE}/availability`, { params }),
-
-  unitAvailability: (id: string, params?: { start_date?: string; end_date?: string }) =>
-    api.get<UnitAvailabilityResponse>(`${BASE}/${id}/unit-availability`, { params }),
-
-  setUnitAvailability: (
-    id: string,
-    records: { unit_number: number; date: string; is_available: boolean }[],
-  ) => api.put(`${BASE}/${id}/unit-availability`, records),
 
   rateCalendar: (id: string, params?: { start_date?: string; end_date?: string }) =>
     api.get<RateCalendarResponse>(`${BASE}/${id}/rate-calendar`, { params }),
